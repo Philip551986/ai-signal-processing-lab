@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Test and notebook caches
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Package build files
+*.egg-info/
+build/
+dist/
+
+# Local Python environments
+.venv/
+venv/
+
+# Uploaded recordings and generated results
+uploads/
+outputs/
+
+# Local credentials and configuration
+.env
+.env.*
+secrets.toml
+.streamlit/secrets.toml
