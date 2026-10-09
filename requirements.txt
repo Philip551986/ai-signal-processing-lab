@@ -1,8 +1,8 @@
-# Install our shared processing package and its NumPy/SciPy dependencies.
+# Install our shared processing package.
 .
 
-# Install the web interface framework.
-streamlit
-
-# Install plotting tools for before-and-after comparisons.
-matplotlib
+# Use the versions installed in the working hosted preview.
+numpy==2.5.3
+scipy==1.18.1
+streamlit==1.65.0
+matplotlib==3.11.2
