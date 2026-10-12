@@ -1,22 +1,23 @@
 # Import NumPy for example generation and sample times.
 import numpy as np
 
-# Import Streamlit for the web interface.
+# Import Streamlit for the interface.
 import streamlit as st
 
-# Import Matplotlib for waveform and spectrum plots.
+# Import Matplotlib for signal plots.
 import matplotlib.pyplot as plt
 
-# Import the shared processing functions.
+# Import shared processing functions instead of duplicating their algorithms.
 from signal_lab.validation import validate_signal
-from signal_lab.spectral import detect_peaks
+from signal_lab.spectral import detect_peaks, calculate_fft
 from signal_lab.recommendation import recommend_filter
 from signal_lab.filters import apply_filter
+from signal_lab.metrics import compare_rms
 
 # Configure the browser-tab title and page width.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
-# Define the workflow stages in order.
+# Define the workflow order.
 stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
 
 # Initialize navigation for a new session.
@@ -24,50 +25,58 @@ if "current_stage" not in st.session_state:
     st.session_state["current_stage"] = "Upload"
 
 
-# Define the callback for navigation buttons.
+# Define the navigation callback.
 def select_stage(stage_name):
     # Remember the selected stage before the page redraws.
     st.session_state["current_stage"] = stage_name
 
 
-# Define how to remove an outdated processing result.
+# Define how to clear outdated processing results.
 def clear_processed_result():
-    # Remove processed samples if they exist.
+    # Safely remove processed samples and their associated settings.
     st.session_state.pop("filtered_samples", None)
-
-    # Remove the settings that produced those samples.
     st.session_state.pop("applied_filter", None)
-
-    # Remove the useful band associated with the result.
     st.session_state.pop("applied_band", None)
 
 
-# Arrange the brand and preview status.
+# Define a presentation helper for consistent chart formatting.
+def style_plot(axis, x_label, y_label):
+    # Label the plotted quantities and their units.
+    axis.set_xlabel(x_label)
+    axis.set_ylabel(y_label)
+
+    # Add a subtle grid and remove unnecessary borders.
+    axis.grid(True, alpha=0.15)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+
+
+# Arrange the application brand and preview status.
 brand_column, status_column = st.columns([4, 1])
 
-# Display the application name and description.
+# Display the brand.
 with brand_column:
     st.title("Signal Lab")
     st.caption("AI Signal Processing Lab · Explore. Filter. Compare.")
 
-# Identify this version as a demo workspace.
+# Display the workspace status.
 with status_column:
     st.info("Demo workspace")
 
-# Separate the header from the page content.
+# Separate the header from the current page.
 st.divider()
 
-# Display workflow navigation in the sidebar.
+# Place workflow navigation in the sidebar.
 with st.sidebar:
     st.subheader("Signal Lab")
     st.caption("YOUR WORKSPACE")
 
-    # Create one numbered navigation button per stage.
+    # Number the stages starting from one.
     for number, stage_name in enumerate(stages, start=1):
-        # Determine which button to highlight.
+        # Determine which stage to highlight.
         is_selected = st.session_state["current_stage"] == stage_name
 
-        # Connect each button to the navigation callback.
+        # Create a navigation button with a unique key.
         st.button(
             f"{number:02d}  ·  {stage_name}",
             key=f"navigation_{stage_name}",
@@ -77,18 +86,16 @@ with st.sidebar:
             args=(stage_name,),
         )
 
-    # Separate navigation from availability information.
+    # Display current feature availability.
     st.divider()
     st.caption("Built-in example available")
-    st.caption("Compare and Export are coming next.")
+    st.caption("Export is coming next.")
 
-# Retrieve the selected stage.
+# Retrieve the current stage and its zero-based position.
 stage = st.session_state["current_stage"]
-
-# Find its zero-based position in the workflow.
 stage_index = stages.index(stage)
 
-# Display the step number using one-based numbering.
+# Display the human-readable step number.
 st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
 
 # Display signal selection.
@@ -96,7 +103,7 @@ if stage == "Upload":
     st.header("Start with a signal")
     st.caption("Explore the guided example to get familiar with the lab.")
 
-    # Arrange the recording and example panels side by side.
+    # Create side-by-side recording and example panels.
     upload_column, example_column = st.columns(2)
 
     # Display the planned upload panel.
@@ -105,7 +112,7 @@ if stage == "Upload":
             st.subheader("Your recording")
             st.write("WAV audio or CSV signal measurements.")
 
-            # Keep uploads disabled until loading is connected.
+            # Keep uploads disabled until their loading logic is connected.
             st.file_uploader(
                 "Choose a signal file",
                 type=["wav", "csv"],
@@ -131,10 +138,8 @@ if stage == "Upload":
                 fs_hz = 2000.0
                 duration_s = 5.0
 
-                # Calculate the total number of samples.
+                # Calculate sample count and sample times in seconds.
                 sample_count = int(fs_hz * duration_s)
-
-                # Calculate each sample's time in seconds.
                 time_s = np.arange(sample_count) / fs_hz
 
                 # Generate the useful tone with dimensionless amplitude 1.
@@ -143,38 +148,38 @@ if stage == "Upload":
                 # Generate the unwanted tone with dimensionless amplitude 0.5.
                 unwanted_signal = 0.5 * np.sin(2 * np.pi * 400.0 * time_s)
 
-                # Validate the combined signal using the shared module.
+                # Validate the combined signal.
                 samples = validate_signal(
                     useful_signal + unwanted_signal,
                     fs_hz,
                 )
 
-                # Preserve the samples and sampling rate between stages.
+                # Store the original samples and sampling rate.
                 st.session_state["samples"] = samples
                 st.session_state["fs_hz"] = fs_hz
 
-                # Clear old processing results when the example is reloaded.
+                # Clear results belonging to a previously loaded signal.
                 clear_processed_result()
 
-            # Confirm that the example is ready.
+            # Confirm that an example is loaded.
             if "samples" in st.session_state:
                 st.success("Example ready. Continue to Inspect below.")
 
-# Display signal inspection.
+# Display inspection of the original signal.
 elif stage == "Inspect":
     st.header("Understand your signal")
     st.caption("Inspect the waveform and its detected frequency components.")
 
-    # Handle inspection before loading a signal.
+    # Handle an empty session.
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the built-in example first.")
 
     else:
-        # Retrieve the samples and sampling rate in hertz.
+        # Retrieve the original samples and sampling rate in hertz.
         samples = st.session_state["samples"]
         fs_hz = st.session_state["fs_hz"]
 
-        # Create three equally sized measurement columns.
+        # Arrange measurement cards in three equal columns.
         rate_card, duration_card, nyquist_card = st.columns(3)
 
         # Display the sampling rate.
@@ -182,17 +187,17 @@ elif stage == "Inspect":
             with st.container(border=True):
                 st.metric("Sampling rate", f"{fs_hz:,.0f} Hz")
 
-        # Display the recording duration in seconds.
+        # Display duration in seconds.
         with duration_card:
             with st.container(border=True):
                 st.metric("Duration", f"{len(samples) / fs_hz:.2f} s")
 
-        # Display half the sampling rate as the Nyquist frequency.
+        # Display the Nyquist frequency in hertz.
         with nyquist_card:
             with st.container(border=True):
                 st.metric("Nyquist frequency", f"{fs_hz / 2:,.0f} Hz")
 
-        # Group the waveform and known demo information.
+        # Display the waveform and known example details.
         with st.container(border=True):
             st.subheader("Signal preview")
             st.caption("Original signal · first 50 milliseconds")
@@ -203,10 +208,10 @@ elif stage == "Inspect":
             # Convert sample positions into milliseconds.
             preview_time_ms = np.arange(preview_count) / fs_hz * 1000
 
-            # Create the taller waveform figure.
+            # Create the waveform figure.
             figure, axis = plt.subplots(figsize=(8, 3.8))
 
-            # Plot the original samples in teal.
+            # Plot actual samples without smoothing.
             axis.plot(
                 preview_time_ms,
                 samples[:preview_count],
@@ -214,29 +219,19 @@ elif stage == "Inspect":
                 linewidth=1.8,
             )
 
-            # Label the waveform axes and their units.
-            axis.set_xlabel("Time (ms)")
-            axis.set_ylabel("Amplitude (dimensionless)")
-
-            # Display the 0–50 ms interval with a subtle grid.
+            # Apply consistent axis labels and styling.
+            style_plot(axis, "Time (ms)", "Amplitude (dimensionless)")
             axis.set_xlim(0, 50)
-            axis.grid(True, alpha=0.15)
-
-            # Remove unnecessary plot borders.
-            axis.spines["top"].set_visible(False)
-            axis.spines["right"].set_visible(False)
-
-            # Fit the labels inside the figure.
             figure.tight_layout()
 
-            # Give the waveform more width than its details.
+            # Give the plot more width than the explanatory panel.
             plot_column, details_column = st.columns([3, 1])
 
-            # Display the waveform.
+            # Render the waveform.
             with plot_column:
                 st.pyplot(figure)
 
-            # Display the known components used to generate the example.
+            # Identify the known tones used to generate this example.
             with details_column:
                 st.markdown("**Known demo tones**")
                 st.metric("Useful tone", "100 Hz")
@@ -247,14 +242,14 @@ elif stage == "Inspect":
             # Release the figure after rendering.
             plt.close(figure)
 
-        # Display automatic frequency analysis.
+        # Display calculated frequency analysis.
         with st.container(border=True):
             st.subheader("Frequency analysis")
             st.caption("Calculated from the complete 5-second signal.")
 
             # Catch expected validation errors.
             try:
-                # Call the packaged detector with explicit settings.
+                # Detect peaks using the packaged function.
                 frequency_hz, amplitude, peak_indices = detect_peaks(
                     samples,
                     fs_hz,
@@ -262,72 +257,58 @@ elif stage == "Inspect":
                     minimum_separation_hz=5.0,
                 )
 
-            # Display a readable analysis error.
+            # Show a readable error if analysis fails.
             except ValueError as error:
                 st.error(f"Frequency analysis could not run: {error}")
 
             else:
-                # Select detected frequencies in hertz.
+                # Select detected frequencies and dimensionless amplitudes.
                 detected_hz = frequency_hz[peak_indices]
-
-                # Select their estimated dimensionless amplitudes.
                 detected_amplitude = amplitude[peak_indices]
 
                 # Create the spectrum figure.
-                spectrum_figure, spectrum_axis = plt.subplots(
-                    figsize=(8, 3.8)
-                )
+                figure, axis = plt.subplots(figsize=(8, 3.8))
 
                 # Plot the spectrum returned by the shared detector.
-                spectrum_axis.plot(
+                axis.plot(
                     frequency_hz,
                     amplitude,
                     color="#0F766E",
                     linewidth=1.5,
                 )
 
-                # Mark the detected peaks.
-                spectrum_axis.scatter(
+                # Mark detected peaks with circles.
+                axis.scatter(
                     detected_hz,
                     detected_amplitude,
                     color="#0F172A",
-                    marker="o",
                     s=35,
                     zorder=3,
                     label="Detected peaks",
                 )
 
-                # Display the complete one-sided frequency range.
-                spectrum_axis.set_xlim(0, fs_hz / 2)
-
-                # Label the spectrum axes with their units.
-                spectrum_axis.set_xlabel("Frequency (Hz)")
-                spectrum_axis.set_ylabel(
-                    "Estimated amplitude (dimensionless)"
+                # Label and style the spectrum.
+                style_plot(
+                    axis,
+                    "Frequency (Hz)",
+                    "Estimated amplitude (dimensionless)",
                 )
+                axis.set_xlim(0, fs_hz / 2)
 
-                # Add a grid and remove unnecessary borders.
-                spectrum_axis.grid(True, alpha=0.15)
-                spectrum_axis.spines["top"].set_visible(False)
-                spectrum_axis.spines["right"].set_visible(False)
-
-                # Display a legend only when peaks exist.
+                # Show the legend only when peaks exist.
                 if len(peak_indices) > 0:
-                    spectrum_axis.legend(frameon=False)
+                    axis.legend(frameon=False)
 
-                # Fit the labels and display the spectrum.
-                spectrum_figure.tight_layout()
-                st.pyplot(spectrum_figure)
+                # Render and release the spectrum figure.
+                figure.tight_layout()
+                st.pyplot(figure)
+                plt.close(figure)
 
-                # Release the spectrum figure's memory.
-                plt.close(spectrum_figure)
-
-                # Explain when no peaks meet the settings.
+                # Display either an empty-state message or the detected table.
                 if len(peak_indices) == 0:
                     st.info("No peaks met the current detection settings.")
 
                 else:
-                    # Display detected peaks ranked by amplitude.
                     st.dataframe(
                         {
                             "Frequency (Hz)": detected_hz,
@@ -345,13 +326,13 @@ elif stage == "Inspect":
                     "Minimum peak separation: 5 Hz."
                 )
 
-                # Distinguish frequency detection from identifying noise.
+                # Distinguish detected frequencies from proven noise.
                 st.info(
                     "A detected frequency is not automatically noise. "
                     "For this example, 100 Hz is useful and 400 Hz is unwanted."
                 )
 
-        # Keep optional learning guidance in a collapsible section.
+        # Provide optional learning guidance.
         with st.expander("How do I read this signal?"):
             st.markdown(
                 "**Time (ms):** shows when each sample was recorded. "
@@ -359,7 +340,7 @@ elif stage == "Inspect":
             )
             st.markdown(
                 "**Amplitude:** shows the sample value at each instant. "
-                "This generated example uses dimensionless values."
+                "This example uses dimensionless values."
             )
             st.markdown(
                 "**The shape:** the 100 Hz tone produces five main cycles "
@@ -379,7 +360,7 @@ elif stage == "Inspect":
                 "window before calculating the FFT."
             )
             st.caption(
-                "The known tone labels describe the generated example. "
+                "Known tone labels describe the generated example. "
                 "The frequency table contains calculated detection results."
             )
 
@@ -388,37 +369,37 @@ elif stage == "Configure":
     st.header("Choose what to preserve")
     st.caption("Set the useful band, review the suggestion, and apply it.")
 
-    # Require a loaded signal.
+    # Require original samples before configuring a filter.
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the example first.")
 
     else:
-        # Retrieve the original samples and sampling rate in hertz.
+        # Retrieve the original samples and sampling rate.
         samples = st.session_state["samples"]
         fs_hz = st.session_state["fs_hz"]
 
         # Calculate the Nyquist boundary in hertz.
         nyquist_hz = fs_hz / 2
 
-        # Initialize persistent useful-band settings for the demo.
+        # Initialize persistent useful-band settings.
         if "useful_band" not in st.session_state:
             st.session_state["useful_band"] = (80.0, 250.0)
 
-        # Retrieve saved boundaries so navigation does not reset them.
+        # Retrieve saved settings so page navigation does not reset them.
         saved_low_hz, saved_high_hz = st.session_state["useful_band"]
 
-        # Group the useful-band controls.
+        # Display useful-band controls.
         with st.container(border=True):
             st.subheader("Useful frequency band")
             st.write(
-                "Choose the frequency range containing the signal you want "
-                "to keep. Peaks outside it become candidates for removal."
+                "Choose the range containing the signal you want to keep. "
+                "Peaks outside it become candidates for removal."
             )
 
-            # Arrange the boundaries side by side.
+            # Arrange the lower and upper controls side by side.
             low_column, high_column = st.columns(2)
 
-            # Read the lower boundary in hertz.
+            # Read the lower frequency boundary in hertz.
             with low_column:
                 useful_low_hz = st.number_input(
                     "Lower frequency (Hz)",
@@ -429,7 +410,7 @@ elif stage == "Configure":
                     key="useful_low_hz",
                 )
 
-            # Read the upper boundary in hertz.
+            # Read the upper frequency boundary in hertz.
             with high_column:
                 useful_high_hz = st.number_input(
                     "Upper frequency (Hz)",
@@ -440,30 +421,28 @@ elif stage == "Configure":
                     key="useful_high_hz",
                 )
 
-            # Explain the demo's starting assumption.
+            # Explain the demo's starting settings.
             st.caption(
                 "Demo starting point: 80–250 Hz preserves the 100 Hz tone "
                 "and places the 400 Hz tone outside the useful band."
             )
 
-        # Record the current boundaries as a tuple.
+        # Save current settings separately from temporary widget state.
         current_band = (useful_low_hz, useful_high_hz)
-
-        # Preserve boundaries even when their widgets leave the screen.
         st.session_state["useful_band"] = current_band
 
-        # Clear processed samples if they belong to different settings.
+        # Clear results produced with different useful-band settings.
         if st.session_state.get("applied_band") != current_band:
             clear_processed_result()
 
-        # Reject reversed or equal boundaries.
+        # Reject equal or reversed boundaries.
         if useful_low_hz >= useful_high_hz:
             st.error("The lower frequency must be less than the upper frequency.")
 
         else:
-            # Catch validation errors from detection or recommendation.
+            # Catch validation errors from analysis and recommendation.
             try:
-                # Detect peaks using the same settings as Inspect.
+                # Use the same peak-detection settings as Inspect.
                 frequency_hz, amplitude, peak_indices = detect_peaks(
                     samples,
                     fs_hz,
@@ -471,10 +450,10 @@ elif stage == "Configure":
                     minimum_separation_hz=5.0,
                 )
 
-                # Select detected frequencies in hertz.
+                # Select detected peak frequencies in hertz.
                 detected_hz = frequency_hz[peak_indices]
 
-                # Ask the shared module for its recommendation.
+                # Request a recommendation from the shared module.
                 recommendation = recommend_filter(
                     detected_hz,
                     fs_hz,
@@ -482,13 +461,13 @@ elif stage == "Configure":
                     useful_high_hz,
                 )
 
-            # Display a readable recommendation error.
+            # Clear obsolete results and report the error.
             except ValueError as error:
                 clear_processed_result()
                 st.error(f"Could not recommend a filter: {error}")
 
             else:
-                # Translate internal filter names into readable labels.
+                # Translate internal names into readable filter labels.
                 filter_labels = {
                     "none": "No filter suggested",
                     "notch": "Notch filter",
@@ -497,22 +476,20 @@ elif stage == "Configure":
                     "bandpass": "Band-pass filter",
                 }
 
-                # Group the suggestion and application controls.
+                # Display the suggestion and processing controls.
                 with st.container(border=True):
                     st.subheader("Suggested filter")
 
-                    # Display the readable filter name.
+                    # Display the suggested filter name and decision explanation.
                     st.markdown(
                         f"**{filter_labels[recommendation['filter_type']]}**"
                     )
-
-                    # Display the explanation from the shared module.
                     st.write(recommendation["reason"])
 
-                    # Retrieve the proposed frequency setting in hertz.
+                    # Retrieve the suggested frequency setting in hertz.
                     cutoff_hz = recommendation["cutoff_hz"]
 
-                    # Display a notch's center frequency.
+                    # Display the notch center when a notch is suggested.
                     if recommendation["filter_type"] == "notch":
                         st.metric(
                             "Notch center frequency",
@@ -526,14 +503,14 @@ elif stage == "Configure":
                             f"**{cutoff_hz[0]:g}–{cutoff_hz[1]:g} Hz**"
                         )
 
-                    # Display the cutoff for low-pass or high-pass.
+                    # Display the single low-pass or high-pass cutoff.
                     elif cutoff_hz is not None:
                         st.metric("Suggested cutoff", f"{cutoff_hz:g} Hz")
 
                     # Retrieve candidate interference frequencies.
                     candidates = recommendation["candidate_hz"]
 
-                    # Display candidates when any exist.
+                    # Display candidates when they exist.
                     if candidates:
                         st.dataframe(
                             {"Candidate interference frequency (Hz)": candidates},
@@ -541,43 +518,40 @@ elif stage == "Configure":
                             width="stretch",
                         )
 
-                    # Explain the limits of the suggestion.
+                    # Explain the recommendation's assumption.
                     st.caption(
-                        "This suggestion depends on your useful-band choice. "
+                        "The suggestion depends on your useful-band choice. "
                         "It does not prove that a component is noise."
                     )
 
-                    # Explain the fixed settings used for this step.
+                    # Describe the fixed processing settings.
                     st.caption(
-                        "Processing defaults: Butterworth design order 4 "
-                        "for low-pass, high-pass, or band-pass; "
-                        "Q = 30 for a second-order notch."
+                        "Defaults: Butterworth design order 4 for low-pass, "
+                        "high-pass, or band-pass; Q = 30 for a second-order notch."
                     )
-
-                    # Identify the processing method and retained input.
                     st.caption(
                         "Offline forward-backward filtering uses the complete "
                         "recording. The original samples remain available."
                     )
 
-                    # Choose the appropriate action label.
+                    # Choose a label appropriate to the suggested operation.
                     action_label = (
                         "Keep signal unchanged"
                         if recommendation["filter_type"] == "none"
                         else "Apply suggested filter"
                     )
 
-                    # Process only when the user clicks the button.
+                    # Process only after an explicit button click.
                     if st.button(
                         action_label,
                         key="apply_suggestion",
                         type="primary",
                         width="stretch",
                     ):
-                        # Remove any previous result before a new attempt.
+                        # Clear the previous result before attempting processing.
                         clear_processed_result()
 
-                        # Catch errors from the packaged filter.
+                        # Catch errors reported by the packaged filter.
                         try:
                             # Always process the original samples.
                             filtered_samples = apply_filter(
@@ -589,37 +563,31 @@ elif stage == "Configure":
                                 notch_q=30.0,
                             )
 
-                        # Display a readable filtering error.
+                        # Display a readable processing error.
                         except ValueError as error:
                             st.error(f"Could not process the signal: {error}")
 
                         else:
-                            # Store processed samples for later comparison.
+                            # Store the processed samples and applied settings.
                             st.session_state["filtered_samples"] = (
                                 filtered_samples
                             )
-
-                            # Store the settings that produced the result.
                             st.session_state["applied_filter"] = (
                                 recommendation.copy()
                             )
-
-                            # Store the useful band used for this result.
                             st.session_state["applied_band"] = current_band
 
-                    # Display confirmation when a processed result exists.
+                    # Confirm a completed operation.
                     if "filtered_samples" in st.session_state:
-                        # Retrieve the completed operation's settings.
+                        # Retrieve the operation associated with the saved result.
                         applied_filter = st.session_state["applied_filter"]
 
-                        # Describe an unchanged copy accurately.
+                        # Distinguish an unchanged copy from filtering.
                         if applied_filter["filter_type"] == "none":
                             st.success(
                                 "Signal kept unchanged. "
                                 "Result saved for comparison."
                             )
-
-                        # Confirm filtering without claiming improved quality.
                         else:
                             st.success(
                                 "Filter applied. "
@@ -632,30 +600,215 @@ elif stage == "Configure":
                             f"{len(st.session_state['filtered_samples']):,}"
                         )
 
-                    # Explain what to do before processing.
+                    # Give guidance when no processed result exists.
                     else:
                         st.info("Review the suggestion, then apply it above.")
 
-# Display placeholders for Compare and Export.
-else:
-    st.header(stage)
-    st.info(
-        "This stage is coming next. Use Upload, Inspect, and Configure for now."
-    )
+# Display before-and-after comparison.
+elif stage == "Compare":
+    st.header("See what changed")
+    st.caption("Compare the original signal with the processed result.")
 
-# Separate page content from workflow navigation.
+    # Require a completed processing operation.
+    if "filtered_samples" not in st.session_state:
+        st.warning("Go to Configure and apply the suggestion first.")
+
+    else:
+        # Retrieve original and processed dimensionless samples.
+        original = st.session_state["samples"]
+        filtered = st.session_state["filtered_samples"]
+
+        # Retrieve sampling rate and the settings used for this result.
+        fs_hz = st.session_state["fs_hz"]
+        applied_filter = st.session_state["applied_filter"]
+        applied_low_hz, applied_high_hz = st.session_state["applied_band"]
+
+        # Describe the completed operation.
+        st.caption(
+            f"Applied operation: {applied_filter['filter_type']} · "
+            f"Declared useful band: {applied_low_hz:g}–{applied_high_hz:g} Hz"
+        )
+
+        # Catch validation errors from the shared comparison functions.
+        try:
+            # Measure RMS using the packaged function.
+            measurements = compare_rms(original, filtered)
+
+            # Calculate both spectra using identical FFT processing.
+            before_frequency_hz, before_amplitude = calculate_fft(
+                original, fs_hz
+            )
+            after_frequency_hz, after_amplitude = calculate_fft(
+                filtered, fs_hz
+            )
+
+        # Display a readable error if comparison fails.
+        except ValueError as error:
+            st.error(f"Could not compare the signals: {error}")
+
+        else:
+            # Create side-by-side RMS cards.
+            before_card, after_card = st.columns(2)
+
+            # Display original RMS in the signal's amplitude units.
+            with before_card:
+                with st.container(border=True):
+                    st.metric(
+                        "Original RMS (dimensionless)",
+                        f"{measurements['rms_before']:.4f}",
+                    )
+
+            # Display processed RMS in the same units.
+            with after_card:
+                with st.container(border=True):
+                    st.metric(
+                        "Processed RMS (dimensionless)",
+                        f"{measurements['rms_after']:.4f}",
+                    )
+
+            # Explain why lower RMS alone does not establish better quality.
+            st.caption(
+                "RMS measures overall amplitude. A lower value can reflect "
+                "removed interference or lost useful signal; inspect the spectra too."
+            )
+
+            # Display a waveform overlay using shared axes.
+            with st.container(border=True):
+                st.subheader("Waveform comparison")
+                st.caption(
+                    "First 50 milliseconds · edge transients may be visible."
+                )
+
+                # Select matching samples from both signals.
+                preview_count = min(len(original), int(0.05 * fs_hz))
+
+                # Calculate their times in milliseconds.
+                preview_time_ms = np.arange(preview_count) / fs_hz * 1000
+
+                # Create the waveform figure.
+                figure, axis = plt.subplots(figsize=(8, 3.8))
+
+                # Draw the original waveform as a dashed grey line.
+                axis.plot(
+                    preview_time_ms,
+                    original[:preview_count],
+                    color="#64748B",
+                    linestyle="--",
+                    linewidth=1.4,
+                    label="Original",
+                )
+
+                # Draw the processed waveform as a solid teal line.
+                axis.plot(
+                    preview_time_ms,
+                    filtered[:preview_count],
+                    color="#0F766E",
+                    linewidth=1.8,
+                    label="Processed",
+                )
+
+                # Label and style the shared axes.
+                style_plot(axis, "Time (ms)", "Amplitude (dimensionless)")
+                axis.set_xlim(0, 50)
+                axis.legend(frameon=False)
+
+                # Render the overlay and release its figure.
+                figure.tight_layout()
+                st.pyplot(figure)
+                plt.close(figure)
+
+            # Display both spectra using shared axes and amplitude scaling.
+            with st.container(border=True):
+                st.subheader("Spectrum comparison")
+                st.caption(
+                    "Complete recording · identical FFT scaling for both signals."
+                )
+
+                # Create the spectrum figure.
+                figure, axis = plt.subplots(figsize=(8, 3.8))
+
+                # Draw the original spectrum as a dashed grey line.
+                axis.plot(
+                    before_frequency_hz,
+                    before_amplitude,
+                    color="#64748B",
+                    linestyle="--",
+                    linewidth=1.4,
+                    label="Original",
+                )
+
+                # Draw the processed spectrum as a solid teal line.
+                axis.plot(
+                    after_frequency_hz,
+                    after_amplitude,
+                    color="#0F766E",
+                    linewidth=1.8,
+                    label="Processed",
+                )
+
+                # Shade the declared useful band, not the filter response.
+                axis.axvspan(
+                    applied_low_hz,
+                    applied_high_hz,
+                    color="#0F766E",
+                    alpha=0.08,
+                    label="Declared useful band",
+                )
+
+                # Label and style the shared frequency axes.
+                style_plot(
+                    axis,
+                    "Frequency (Hz)",
+                    "Estimated amplitude (dimensionless)",
+                )
+                axis.set_xlim(0, fs_hz / 2)
+                axis.legend(frameon=False)
+
+                # Render the spectrum overlay and release its figure.
+                figure.tight_layout()
+                st.pyplot(figure)
+                plt.close(figure)
+
+                # Explain the expected result specifically for the notch example.
+                if applied_filter["filter_type"] == "notch":
+                    st.info(
+                        "For the 400 Hz notch example, check that the 400 Hz "
+                        "component decreases while the 100 Hz component remains "
+                        "close to its original amplitude."
+                    )
+
+                # Explain the result when no filtering was requested.
+                elif applied_filter["filter_type"] == "none":
+                    st.info(
+                        "The signal was kept unchanged. Both waveforms and "
+                        "spectra should overlap, and the RMS values should match."
+                    )
+
+                # Give general guidance for other filter suggestions.
+                else:
+                    st.info(
+                        "Check whether candidate interference decreased and "
+                        "the components you wanted to preserve remain."
+                    )
+
+# Display the remaining Export placeholder.
+else:
+    st.header("Export")
+    st.info("Export is coming next. Review your result in Compare for now.")
+
+# Separate page content from navigation controls.
 st.divider()
 
-# Create columns for Back and Continue.
+# Arrange Back and Continue buttons.
 back_column, next_column = st.columns(2)
 
-# Show backward navigation when an earlier stage exists.
+# Display Back when an earlier stage exists.
 with back_column:
     if stage_index > 0:
         # Retrieve the previous stage.
         previous_stage = stages[stage_index - 1]
 
-        # Connect the Back button to the navigation callback.
+        # Connect backward navigation to the callback.
         st.button(
             f"← Back to {previous_stage}",
             key="back_stage",
@@ -663,19 +816,24 @@ with back_column:
             args=(previous_stage,),
         )
 
-# Show forward navigation when another stage exists.
+# Display Continue when another stage exists.
 with next_column:
     if stage_index < len(stages) - 1:
         # Retrieve the next stage.
         next_stage = stages[stage_index + 1]
 
-        # Check whether a signal has been loaded.
+        # Determine which required data is available.
         signal_loaded = "samples" in st.session_state
+        result_available = "filtered_samples" in st.session_state
 
-        # Enable forward navigation through Upload and Inspect.
-        can_continue = signal_loaded and stage in ("Upload", "Inspect")
+        # Enable navigation through Inspect and into Compare.
+        can_continue = (
+            signal_loaded and stage in ("Upload", "Inspect")
+        ) or (
+            stage == "Configure" and result_available
+        )
 
-        # Keep later Continue buttons disabled until their pages are connected.
+        # Disable Continue when its required result is unavailable.
         st.button(
             f"Continue to {next_stage} →",
             key="next_stage",
@@ -686,6 +844,10 @@ with next_column:
             args=(next_stage,),
         )
 
-        # Explain why later Continue buttons are disabled.
-        if stage not in ("Upload", "Inspect"):
-            st.caption("The next processing stage is still being built.")
+        # Explain the remaining unfinished stage.
+        if stage == "Compare":
+            st.caption("Export is still being built.")
+
+        # Explain the requirement for moving into Compare.
+        elif stage == "Configure" and not can_continue:
+            st.caption("Apply the suggestion before continuing to Compare.")
