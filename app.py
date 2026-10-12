@@ -1,65 +1,61 @@
-# Import NumPy to generate and handle signal samples.
+# Import NumPy for sample positions and the generated example.
 import numpy as np
 
-# Import Streamlit to build the interface.
+# Import Streamlit for the web interface.
 import streamlit as st
 
-# Import Matplotlib to draw the waveform.
+# Import Matplotlib for waveform and spectrum plots.
 import matplotlib.pyplot as plt
 
-# Import our shared signal-validation function.
+# Import the shared signal validator.
 from signal_lab.validation import validate_signal
 
-# Configure the browser-tab title and page width.
+# Import the packaged detector rather than rewriting its calculations.
+from signal_lab.spectral import detect_peaks
+
+# Set the browser-tab title and wide layout.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
-# Define the workflow stages in order.
+# Define the workflow order.
 stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
 
-# Start on Upload when no stage has been selected.
+# Initialize navigation for a new browser session.
 if "current_stage" not in st.session_state:
     st.session_state["current_stage"] = "Upload"
 
 
 # Define the callback used by navigation buttons.
 def select_stage(stage_name):
-    # Remember which stage the user selected.
+    # Remember the selected stage before Streamlit redraws the page.
     st.session_state["current_stage"] = stage_name
 
 
-# Create a wide brand column and a narrower status column.
+# Create columns for the brand and workspace status.
 brand_column, status_column = st.columns([4, 1])
 
-# Place the brand in the wider column.
+# Display the brand in the wider column.
 with brand_column:
-    # Display the application name.
     st.title("Signal Lab")
-
-    # Describe the workspace.
     st.caption("AI Signal Processing Lab · Explore. Filter. Compare.")
 
-# Place the status in the narrower column.
+# Display the preview status in the smaller column.
 with status_column:
-    # Identify the current version as a demo.
     st.info("Demo workspace")
 
 # Separate the header from the stage content.
 st.divider()
 
-# Group navigation inside the sidebar.
+# Put workflow navigation in the sidebar.
 with st.sidebar:
-    # Display the workspace name.
     st.subheader("Signal Lab")
-
-    # Label the navigation area.
     st.caption("YOUR WORKSPACE")
 
-    # Create one numbered button for each stage.
+    # Loop through the stages, numbering them from one.
     for number, stage_name in enumerate(stages, start=1):
-        # Check whether this is the selected stage.
+        # Determine which navigation button to highlight.
         is_selected = st.session_state["current_stage"] == stage_name
 
-        # Highlight the selected button and connect its callback.
+        # Create a full-width navigation button with a unique key.
         st.button(
             f"{number:02d}  ·  {stage_name}",
             key=f"navigation_{stage_name}",
@@ -69,85 +65,66 @@ with st.sidebar:
             args=(stage_name,),
         )
 
-    # Separate navigation from supporting information.
+    # Separate the navigation from the availability notes.
     st.divider()
-
-    # Identify the available input.
     st.caption("Built-in example available")
-
-    # Clearly label the unfinished stages.
     st.caption("Configure, Compare, and Export are coming next.")
 
-# Retrieve the selected stage.
+# Retrieve the current stage.
 stage = st.session_state["current_stage"]
 
-# Find its position in the workflow, counting from zero.
+# Find its zero-based position in the workflow.
 stage_index = stages.index(stage)
 
-# Display the step number, counting from one.
+# Display a step number that counts from one.
 st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
 
-# Display the Upload stage.
+# Show the signal-selection page.
 if stage == "Upload":
-    # Display the main heading.
     st.header("Start with a signal")
-
-    # Explain the available starting point.
     st.caption("Explore the guided example to get familiar with the lab.")
 
-    # Create two equally sized columns.
+    # Arrange the recording and example panels side by side.
     upload_column, example_column = st.columns(2)
 
-    # Place the future upload area in the left column.
+    # Display the planned file-upload panel.
     with upload_column:
-        # Group the upload content inside a bordered panel.
         with st.container(border=True):
-            # Display the panel heading.
             st.subheader("Your recording")
-
-            # Explain which file formats are planned.
             st.write("WAV audio or CSV signal measurements.")
 
-            # Display the future upload control without enabling it.
+            # Keep uploads disabled until their loading logic is connected.
             st.file_uploader(
                 "Choose a signal file",
                 type=["wav", "csv"],
                 disabled=True,
                 key="planned_upload",
             )
-
-            # Explain why uploads are disabled.
             st.caption("File uploads will be connected in a later step.")
 
-    # Place the working example in the right column.
+    # Display the working example panel.
     with example_column:
-        # Group the example content inside a matching panel.
         with st.container(border=True):
-            # Display the panel heading.
             st.subheader("Try the guided example")
-
-            # Describe the known signal components.
             st.write(
                 "A useful 100 Hz tone mixed with an unwanted 400 Hz tone."
             )
-
-            # Display the example's recording details.
             st.caption(
                 "5 seconds · 2,000 Hz sampling rate · Dimensionless amplitude"
             )
 
-            # Generate the example when this button is clicked.
+            # Generate the example only when the button is clicked.
             if st.button("Load example", type="primary", width="stretch"):
-                # Set the sampling rate in hertz (samples per second).
+                # Set the sampling rate in samples per second, expressed in Hz.
                 fs_hz = 2000.0
 
                 # Set the recording duration in seconds.
                 duration_s = 5.0
 
-                # Calculate the total sample count.
+                # Calculate the number of samples.
                 sample_count = int(fs_hz * duration_s)
 
-                # Calculate each sample's time in seconds.
+                # Calculate sample times in seconds.
                 time_s = np.arange(sample_count) / fs_hz
 
                 # Generate the useful tone with dimensionless amplitude 1.
@@ -156,84 +133,67 @@ if stage == "Upload":
                 # Generate the unwanted tone with dimensionless amplitude 0.5.
                 unwanted_signal = 0.5 * np.sin(2 * np.pi * 400.0 * time_s)
 
-                # Validate the combined signal using our shared function.
+                # Validate the combined signal using our shared module.
                 samples = validate_signal(
                     useful_signal + unwanted_signal,
                     fs_hz,
                 )
 
-                # Remember the samples between stages.
+                # Remember the signal and sampling rate between pages.
                 st.session_state["samples"] = samples
-
-                # Remember the sampling rate alongside the samples.
                 st.session_state["fs_hz"] = fs_hz
 
-            # Confirm when the example is ready.
+            # Confirm that the example is available.
             if "samples" in st.session_state:
                 st.success("Example ready. Continue to Inspect below.")
 
-# Display the Inspect stage.
+# Show the signal-inspection page.
 elif stage == "Inspect":
-    # Display the stage heading.
     st.header("Understand your signal")
+    st.caption("Inspect the waveform and its detected frequency components.")
 
-    # Explain the purpose of this stage.
-    st.caption("Check your signal's key properties before choosing a filter.")
-
-    # Provide guidance when no signal is loaded.
+    # Handle navigation to Inspect before loading a signal.
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the built-in example first.")
 
-    # Display measurements and waveform when samples are available.
     else:
-        # Retrieve the stored samples.
+        # Retrieve the dimensionless signal samples and sampling rate in Hz.
         samples = st.session_state["samples"]
-
-        # Retrieve the sampling rate in hertz.
         fs_hz = st.session_state["fs_hz"]
 
-        # Create three equally sized measurement columns.
+        # Arrange the three measurement cards in equal columns.
         rate_card, duration_card, nyquist_card = st.columns(3)
 
-        # Place the sampling-rate card in the first column.
+        # Display the sampling rate.
         with rate_card:
-            # Draw a border around the card.
             with st.container(border=True):
-                # Display the sampling rate with a thousands separator.
                 st.metric("Sampling rate", f"{fs_hz:,.0f} Hz")
 
-        # Place the duration card in the second column.
+        # Display sample count divided by sampling rate as seconds.
         with duration_card:
-            # Draw a matching border.
             with st.container(border=True):
-                # Calculate and display duration in seconds.
                 st.metric("Duration", f"{len(samples) / fs_hz:.2f} s")
 
-        # Place the Nyquist card in the third column.
+        # Display half the sampling rate as the Nyquist frequency.
         with nyquist_card:
-            # Draw a matching border.
             with st.container(border=True):
-                # Display half the sampling rate in hertz.
                 st.metric("Nyquist frequency", f"{fs_hz / 2:,.0f} Hz")
 
-        # Create the waveform panel below the cards.
+        # Group the waveform and known example details.
         with st.container(border=True):
-            # Display the panel heading.
             st.subheader("Signal preview")
-
-            # Explain the displayed time interval.
             st.caption("Original signal · first 50 milliseconds")
 
-            # Select up to 50 milliseconds of samples.
+            # Select the first 50 ms of samples.
             preview_count = min(len(samples), int(0.05 * fs_hz))
 
-            # Convert sample positions to time in milliseconds.
+            # Convert sample positions to milliseconds.
             preview_time_ms = np.arange(preview_count) / fs_hz * 1000
 
-            # Create a taller plot so the waveform is easier to inspect.
+            # Create a taller waveform figure.
             figure, axis = plt.subplots(figsize=(8, 3.8))
 
-            # Plot the original signal in teal.
+            # Plot the actual selected samples without smoothing.
             axis.plot(
                 preview_time_ms,
                 samples[:preview_count],
@@ -241,116 +201,194 @@ elif stage == "Inspect":
                 linewidth=1.8,
             )
 
-            # Label the horizontal axis.
+            # Label the axes with their quantities and units.
             axis.set_xlabel("Time (ms)")
-
-            # Label the vertical axis for the dimensionless demo signal.
             axis.set_ylabel("Amplitude (dimensionless)")
 
-            # Show the 0–50 millisecond viewing interval.
+            # Set the displayed time interval and subtle grid.
             axis.set_xlim(0, 50)
-
-            # Add a faint grid.
             axis.grid(True, alpha=0.15)
 
-            # Hide the upper plot border.
+            # Remove unnecessary plot borders.
             axis.spines["top"].set_visible(False)
-
-            # Hide the right plot border.
             axis.spines["right"].set_visible(False)
 
-            # Adjust spacing to fit the labels.
+            # Fit the axis labels inside the figure.
             figure.tight_layout()
 
-            # Give the waveform more width than the tone details.
+            # Give the waveform more width than the explanation.
             plot_column, details_column = st.columns([3, 1])
 
-            # Display the waveform in the wider column.
+            # Display the waveform.
             with plot_column:
-                # Render the actual signal plot.
                 st.pyplot(figure)
 
-            # Display known example information beside the waveform.
+            # Identify the known components used to generate this example.
             with details_column:
-                # Identify these as known demo components.
                 st.markdown("**Known demo tones**")
-
-                # Display the useful component's frequency in hertz.
                 st.metric("Useful tone", "100 Hz")
-
-                # Explain its role in the example.
                 st.caption("The component we want to preserve.")
-
-                # Display the unwanted component's frequency in hertz.
                 st.metric("Unwanted tone", "400 Hz")
-
-                # Explain its role in the example.
                 st.caption("The interference we will aim to reduce.")
 
-            # Release the figure's memory after displaying it.
+            # Release the figure after rendering it.
             plt.close(figure)
 
-        # Keep learning guidance available in a collapsible section.
+        # Group automatic analysis in its own panel.
+        with st.container(border=True):
+            st.subheader("Frequency analysis")
+            st.caption("Calculated from the complete 5-second signal.")
+
+            # Handle expected input or detection-setting errors clearly.
+            try:
+                # Call the packaged detector with explicit settings.
+                frequency_hz, amplitude, peak_indices = detect_peaks(
+                    samples,
+                    fs_hz,
+                    relative_threshold=0.10,
+                    minimum_separation_hz=5.0,
+                )
+
+            # Display the shared function's error message if analysis fails.
+            except ValueError as error:
+                st.error(f"Frequency analysis could not run: {error}")
+
+            else:
+                # Extract detected frequencies in Hz.
+                detected_hz = frequency_hz[peak_indices]
+
+                # Extract their estimated dimensionless sinusoidal amplitudes.
+                detected_amplitude = amplitude[peak_indices]
+
+                # Create the spectrum figure.
+                spectrum_figure, spectrum_axis = plt.subplots(
+                    figsize=(8, 3.8)
+                )
+
+                # Plot the spectrum returned by the shared detector.
+                spectrum_axis.plot(
+                    frequency_hz,
+                    amplitude,
+                    color="#0F766E",
+                    linewidth=1.5,
+                )
+
+                # Mark detected peaks using a distinct shape.
+                spectrum_axis.scatter(
+                    detected_hz,
+                    detected_amplitude,
+                    color="#0F172A",
+                    marker="o",
+                    s=35,
+                    zorder=3,
+                    label="Detected peaks",
+                )
+
+                # Display the complete one-sided frequency range.
+                spectrum_axis.set_xlim(0, fs_hz / 2)
+
+                # Label the spectrum axes and amplitude units.
+                spectrum_axis.set_xlabel("Frequency (Hz)")
+                spectrum_axis.set_ylabel(
+                    "Estimated amplitude (dimensionless)"
+                )
+
+                # Add a subtle grid and remove unnecessary borders.
+                spectrum_axis.grid(True, alpha=0.15)
+                spectrum_axis.spines["top"].set_visible(False)
+                spectrum_axis.spines["right"].set_visible(False)
+
+                # Display the marker legend when peaks exist.
+                if len(peak_indices) > 0:
+                    spectrum_axis.legend(frameon=False)
+
+                # Fit the labels and render the spectrum.
+                spectrum_figure.tight_layout()
+                st.pyplot(spectrum_figure)
+
+                # Release the spectrum figure's memory.
+                plt.close(spectrum_figure)
+
+                # Explain when the detector finds no qualifying peaks.
+                if len(peak_indices) == 0:
+                    st.info("No peaks met the current detection settings.")
+
+                else:
+                    # Display peaks in the amplitude ranking returned by the module.
+                    st.dataframe(
+                        {
+                            "Frequency (Hz)": detected_hz,
+                            "Estimated amplitude (dimensionless)":
+                                detected_amplitude,
+                        },
+                        hide_index=True,
+                        width="stretch",
+                    )
+
+                # Explain the detection settings in plain language.
+                st.caption(
+                    "Detection settings: minimum height 10% of the largest "
+                    "spectral amplitude; minimum prominence 5% of that "
+                    "amplitude; minimum peak separation 5 Hz."
+                )
+
+                # Avoid confusing a detected component with identified noise.
+                st.info(
+                    "A detected frequency is not automatically noise. "
+                    "For this example, we already know that 100 Hz is useful "
+                    "and 400 Hz is unwanted."
+                )
+
+        # Provide optional learning guidance below the results.
         with st.expander("How do I read this signal?"):
-            # Explain the horizontal axis and displayed interval.
             st.markdown(
                 "**Time (ms):** shows when each sample was recorded. "
-                "This preview displays the first 50 milliseconds."
+                "The waveform preview displays the first 50 milliseconds."
             )
-
-            # Explain the vertical axis and the example's units.
             st.markdown(
                 "**Amplitude:** shows the sample value at each instant. "
-                "Our generated example uses dimensionless values."
+                "This generated example uses dimensionless values."
             )
-
-            # Explain how the known tones contribute to the waveform.
             st.markdown(
                 "**The shape:** the 100 Hz tone produces five main cycles "
-                "in 50 milliseconds. The added 400 Hz tone creates "
-                "smaller, faster changes within those cycles."
+                "in 50 milliseconds. The 400 Hz tone adds faster changes."
             )
-
-            # Define the sampling rate in plain language.
             st.markdown(
                 "**Sampling rate:** 2,000 Hz means 2,000 samples per second."
             )
-
-            # Explain the Nyquist limit and the sampling assumption.
             st.markdown(
                 "**Nyquist frequency:** half the sampling rate is 1,000 Hz. "
-                "To avoid aliasing, the input must be limited to frequencies "
-                "below this value before sampling."
+                "The input must be limited to frequencies below this value "
+                "before sampling to avoid aliasing."
             )
-
-            # Distinguish known example information from automatic detection.
+            st.markdown(
+                "**Frequency spectrum:** shows the estimated amplitudes "
+                "of frequency components. The module removes the mean and "
+                "applies a Hann window before calculating the FFT."
+            )
             st.caption(
-                "The tone labels come from how we generated this example. "
-                "Automatic frequency analysis will be connected later."
+                "The known tone labels describe the generated example. "
+                "The frequency table contains calculated detection results."
             )
 
-# Display placeholders for the remaining stages.
+# Clearly identify stages that are not connected yet.
 else:
-    # Display the selected stage's name.
     st.header(stage)
-
-    # Explain which stages are currently available.
     st.info("This stage is coming next. Use Upload and Inspect for now.")
 
-# Separate the stage content from the navigation controls.
+# Separate results from workflow navigation.
 st.divider()
 
-# Create columns for backward and forward navigation.
+# Create columns for Back and Continue.
 back_column, next_column = st.columns(2)
 
-# Place the Back button in the left column.
+# Display backward navigation when an earlier stage exists.
 with back_column:
-    # Show Back only when an earlier stage exists.
     if stage_index > 0:
-        # Retrieve the previous stage's name.
+        # Retrieve the previous stage.
         previous_stage = stages[stage_index - 1]
 
-        # Navigate backward using the existing callback.
+        # Connect the Back button to the navigation callback.
         st.button(
             f"← Back to {previous_stage}",
             key="back_stage",
@@ -358,20 +396,19 @@ with back_column:
             args=(previous_stage,),
         )
 
-# Place the Continue button in the right column.
+# Display forward navigation when another stage exists.
 with next_column:
-    # Show Continue only when another stage exists.
     if stage_index < len(stages) - 1:
-        # Retrieve the next stage's name.
+        # Retrieve the next stage.
         next_stage = stages[stage_index + 1]
 
-        # Check whether a signal has been loaded.
+        # Check whether signal samples are available.
         signal_loaded = "samples" in st.session_state
 
-        # Allow forward navigation from Upload after loading a signal.
+        # Enable Continue from Upload once the example is loaded.
         can_continue = stage == "Upload" and signal_loaded
 
-        # Display the forward navigation button.
+        # Keep later Continue buttons disabled until their stages are connected.
         st.button(
             f"Continue to {next_stage} →",
             key="next_stage",
@@ -382,6 +419,6 @@ with next_column:
             args=(next_stage,),
         )
 
-        # Explain why later Continue buttons are disabled.
+        # Explain why forward navigation is unavailable on later stages.
         if stage != "Upload":
             st.caption("The next processing stage is still being built.")
