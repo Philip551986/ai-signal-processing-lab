@@ -21,7 +21,9 @@ from signal_lab.spectral import calculate_fft, detect_peaks
 from signal_lab.recommendation import recommend_filter
 from signal_lab.filters import apply_filter
 from signal_lab.metrics import compare_rms
-from signal_lab.data_io import save_processed_wav
+
+# Load WAV recordings and export processed WAV audio.
+from signal_lab.data_io import load_wav, save_processed_wav
 
 
 # Configure the browser title and use the available page width.
@@ -847,7 +849,7 @@ elif stage == "Export":
                 st.subheader("Your processed audio")
                 st.caption("Mono WAV · 16-bit PCM")
 
-                # Display the exported recording's sampling rate and duration.
+                # Display the exported recording's rate and duration.
                 rate_column, duration_column = st.columns(2)
 
                 with rate_column:
