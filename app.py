@@ -1,42 +1,85 @@
 # Import NumPy to generate and handle signal samples.
 import numpy as np
 
-# Import Streamlit to build the web interface.
+# Import Streamlit to build the interface.
 import streamlit as st
 
-# Import Matplotlib to plot the waveform.
+# Import Matplotlib to draw the waveform.
 import matplotlib.pyplot as plt
 
-# Import the shared signal-validation function.
+# Import our shared signal-validation function.
 from signal_lab.validation import validate_signal
 
-# Set the browser-tab title and use a wide layout.
+# Configure the browser-tab title and page width.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
-# Divide the header into columns with a 4-to-1 width ratio.
+# Start on Upload when no stage has been selected.
+if "current_stage" not in st.session_state:
+    st.session_state["current_stage"] = "Upload"
+
+
+# Define the callback used by navigation buttons.
+def select_stage(stage_name):
+    # Remember which stage the user selected.
+    st.session_state["current_stage"] = stage_name
+
+
+# Create a wide brand column and a narrower status column.
 brand_column, status_column = st.columns([4, 1])
 
-# Place the application name in the wider column.
+# Place the brand in the wider column.
 with brand_column:
-    # Display the brand.
+    # Display the application name.
     st.title("Signal Lab")
 
     # Describe the workspace.
     st.caption("AI Signal Processing Lab · Explore. Filter. Compare.")
 
-# Place the preview status in the smaller column.
+# Place the status in the narrower column.
 with status_column:
-    # Identify this version as a demo.
+    # Identify the current version as a demo.
     st.info("Demo workspace")
 
-# Separate the header from the page content.
+# Separate the header from the stage content.
 st.divider()
 
-# Create navigation and retrieve the selected stage.
-stage = st.sidebar.radio(
-    "Choose a stage",
-    ["Upload", "Inspect", "Configure", "Compare", "Export"],
-)
+# Group navigation inside the sidebar.
+with st.sidebar:
+    # Display the workspace name.
+    st.subheader("Signal Lab")
+
+    # Label the navigation area.
+    st.caption("YOUR WORKSPACE")
+
+    # Define the stages in order.
+    stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
+
+    # Create one numbered button for each stage.
+    for number, stage_name in enumerate(stages, start=1):
+        # Check whether this is the selected stage.
+        is_selected = st.session_state["current_stage"] == stage_name
+
+        # Highlight the selected button and connect its callback.
+        st.button(
+            f"{number:02d}  ·  {stage_name}",
+            key=f"navigation_{stage_name}",
+            type="primary" if is_selected else "secondary",
+            width="stretch",
+            on_click=select_stage,
+            args=(stage_name,),
+        )
+
+    # Separate navigation from the supporting information.
+    st.divider()
+
+    # Identify the available input.
+    st.caption("Built-in example available")
+
+    # Clearly label the unfinished stages.
+    st.caption("Configure, Compare, and Export are coming next.")
+
+# Retrieve the selected stage.
+stage = st.session_state["current_stage"]
 
 # Display the Upload stage.
 if stage == "Upload":
@@ -52,7 +95,7 @@ if stage == "Upload":
         "sampled at 2,000 samples per second for 5 seconds."
     )
 
-    # Generate the example when the user clicks the button.
+    # Generate the example when the button is clicked.
     if st.button("Load built-in example", type="primary"):
         # Set the sampling rate in hertz (samples per second).
         fs_hz = 2000.0
@@ -63,43 +106,43 @@ if stage == "Upload":
         # Calculate the total number of samples.
         sample_count = int(fs_hz * duration_s)
 
-        # Calculate the time of each sample in seconds.
+        # Calculate each sample's time in seconds.
         time_s = np.arange(sample_count) / fs_hz
 
-        # Generate the useful 100 Hz tone with dimensionless amplitude 1.
+        # Generate a useful 100 Hz tone with dimensionless amplitude 1.
         useful_signal = np.sin(2 * np.pi * 100.0 * time_s)
 
-        # Generate the unwanted 400 Hz tone with dimensionless amplitude 0.5.
+        # Generate an unwanted 400 Hz tone with dimensionless amplitude 0.5.
         unwanted_signal = 0.5 * np.sin(2 * np.pi * 400.0 * time_s)
 
-        # Combine the tones and validate the resulting signal.
+        # Combine the tones and validate the signal.
         samples = validate_signal(useful_signal + unwanted_signal, fs_hz)
 
-        # Preserve the samples when the user switches stages.
+        # Preserve the samples between stages.
         st.session_state["samples"] = samples
 
         # Preserve the sampling rate alongside the samples.
         st.session_state["fs_hz"] = fs_hz
 
-    # Confirm that the example is available.
+    # Confirm when the example is available.
     if "samples" in st.session_state:
-        st.success("Example loaded. Select Inspect in the sidebar.")
+        st.success("Example loaded. Select 02 · Inspect in the sidebar.")
 
 # Display the Inspect stage.
 elif stage == "Inspect":
     # Display the stage heading.
     st.header("Understand your signal")
 
-    # Explain what the user should check here.
+    # Explain the purpose of this stage.
     st.caption("Check your signal's key properties before choosing a filter.")
 
-    # Give instructions if no signal is available.
+    # Provide guidance when no signal is loaded.
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the built-in example first.")
 
-    # Display the measurements and waveform when a signal is available.
+    # Display the measurements and waveform when samples are available.
     else:
-        # Retrieve the stored signal samples.
+        # Retrieve the stored samples.
         samples = st.session_state["samples"]
 
         # Retrieve the sampling rate in hertz.
@@ -117,36 +160,36 @@ elif stage == "Inspect":
 
         # Place the duration card in the second column.
         with duration_card:
-            # Draw a matching card border.
+            # Draw a matching border.
             with st.container(border=True):
-                # Divide sample count by sampling rate to get seconds.
+                # Calculate and display duration in seconds.
                 st.metric("Duration", f"{len(samples) / fs_hz:.2f} s")
 
-        # Place the Nyquist-frequency card in the third column.
+        # Place the Nyquist card in the third column.
         with nyquist_card:
-            # Draw a matching card border.
+            # Draw a matching border.
             with st.container(border=True):
                 # Display half the sampling rate in hertz.
                 st.metric("Nyquist frequency", f"{fs_hz / 2:,.0f} Hz")
 
-        # Create a waveform panel below the cards.
+        # Create the waveform panel below the cards.
         with st.container(border=True):
             # Display the panel heading.
             st.subheader("Signal preview")
 
-            # Explain the time interval being plotted.
+            # Explain the displayed time interval.
             st.caption("Original signal · first 50 milliseconds")
 
-            # Select up to 50 milliseconds of signal samples.
+            # Select up to 50 milliseconds of samples.
             preview_count = min(len(samples), int(0.05 * fs_hz))
 
             # Convert sample positions to time in milliseconds.
             preview_time_ms = np.arange(preview_count) / fs_hz * 1000
 
-            # Create a figure and its plotting area.
+            # Create a figure and plotting area.
             figure, axis = plt.subplots(figsize=(10, 3))
 
-            # Plot the original samples in teal.
+            # Plot the original signal in teal.
             axis.plot(
                 preview_time_ms,
                 samples[:preview_count],
@@ -154,34 +197,34 @@ elif stage == "Inspect":
                 linewidth=1.8,
             )
 
-            # Label the horizontal axis with its units.
+            # Label the horizontal axis.
             axis.set_xlabel("Time (ms)")
 
-            # Label the vertical axis for this demo's dimensionless samples.
+            # Label the vertical axis for the dimensionless demo signal.
             axis.set_ylabel("Amplitude (dimensionless)")
 
-            # Show the complete 0–50 millisecond viewing interval.
+            # Show the 0–50 millisecond viewing interval.
             axis.set_xlim(0, 50)
 
-            # Add a faint grid for reading the waveform.
+            # Add a faint grid.
             axis.grid(True, alpha=0.15)
 
-            # Remove the upper plot border.
+            # Hide the upper plot border.
             axis.spines["top"].set_visible(False)
 
-            # Remove the right plot border.
+            # Hide the right plot border.
             axis.spines["right"].set_visible(False)
 
-            # Adjust spacing so the axis labels fit.
+            # Adjust spacing to fit the labels.
             figure.tight_layout()
 
-            # Display the plot in the application.
+            # Display the plot.
             st.pyplot(figure)
 
-            # Release the figure's memory after displaying it.
+            # Release the figure's memory.
             plt.close(figure)
 
-            # Explain the known components of the built-in example.
+            # Identify the known components of this example.
             st.caption(
                 "Known demo tones: 100 Hz useful signal · "
                 "400 Hz unwanted signal."
@@ -192,5 +235,5 @@ else:
     # Display the selected stage's name.
     st.header(stage)
 
-    # Explain which features are currently available.
+    # Explain which stages are currently available.
     st.info("This stage is coming next. Use Upload and Inspect for now.")
