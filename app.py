@@ -81,6 +81,12 @@ with st.sidebar:
 # Retrieve the selected stage.
 stage = st.session_state["current_stage"]
 
+# Find its position in the workflow, counting from zero.
+stage_index = stages.index(stage)
+
+# Display the step number, counting from one.
+st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
+
 # Display the Upload stage.
 if stage == "Upload":
     # Display the main heading.
@@ -266,7 +272,7 @@ elif stage == "Inspect":
 
             # Display known example information beside the waveform.
             with details_column:
-                # Clearly identify these as known demo components.
+                # Identify these as known demo components.
                 st.markdown("**Known demo tones**")
 
                 # Display the useful component's frequency in hertz.
@@ -294,9 +300,6 @@ else:
 
 # Separate the stage content from the navigation controls.
 st.divider()
-
-# Find the current stage's position in the workflow.
-stage_index = stages.index(stage)
 
 # Create columns for backward and forward navigation.
 back_column, next_column = st.columns(2)
