@@ -6,8 +6,11 @@ import numpy as np
 # Build the web interface.
 import streamlit as st
 
-# Plot signals and spectra.
+# Plot waveforms and frequency spectra.
 import matplotlib.pyplot as plt
+
+# Build downloadable CSV text in memory.
+from io import StringIO
 
 # Prepare uploaded and exported files in temporary folders.
 from tempfile import TemporaryDirectory
@@ -49,11 +52,14 @@ def clear_processed_result():
     st.session_state.pop("applied_filter", None)
     st.session_state.pop("applied_band", None)
 
+    # Reset the CSV-to-audio choice for a new result.
+    st.session_state.pop("csv_audio_export", None)
+
 
 def clear_input():
     """Remove an input after a failed loading attempt."""
 
-    # Prevent a failed upload from leaving an old recording active.
+    # Prevent a failed upload from leaving an old signal active.
     for key in (
         "samples",
         "fs_hz",
@@ -69,7 +75,7 @@ def clear_input():
 def store_input(samples, fs_hz, source_name, is_demo, input_kind):
     """Store a validated input and reset its previous settings."""
 
-    # Store the signal and its source information.
+    # Store samples, sampling rate, and source information.
     st.session_state["samples"] = samples
     st.session_state["fs_hz"] = fs_hz
     st.session_state["signal_source"] = source_name
@@ -79,7 +85,7 @@ def store_input(samples, fs_hz, source_name, is_demo, input_kind):
     # Previous processed samples belong to the previous input.
     clear_processed_result()
 
-    # Use known settings for the generated example.
+    # Use known useful-band settings for the generated example.
     if is_demo:
         useful_band = (80.0, 250.0)
 
@@ -96,21 +102,24 @@ def store_input(samples, fs_hz, source_name, is_demo, input_kind):
 
 
 def amplitude_unit():
-    """Return an honest amplitude label for the current input."""
+    """Return an amplitude label appropriate to the current input."""
 
-    # CSV values retain their original units, which are not yet entered.
+    # CSV values retain their units, which are not yet entered in the app.
     if st.session_state.get("input_kind") == "csv":
         return "original CSV units"
 
-    # The demo and loaded WAV samples use digital amplitude values.
+    # The demo and WAV loader use digital amplitude values.
     return "dimensionless"
 
 
 def style_plot(axis, x_label, y_label):
     """Apply consistent labels and styling."""
 
+    # Label both axes, including units.
     axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
+
+    # Add a faint grid and hide unnecessary plot borders.
     axis.grid(alpha=0.15)
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
@@ -137,7 +146,7 @@ with status_column:
 st.divider()
 
 
-# Build the sidebar navigation.
+# Build sidebar navigation.
 with st.sidebar:
     st.title("Signal Lab")
     st.caption("YOUR WORKSPACE")
@@ -159,7 +168,7 @@ with st.sidebar:
 
     st.divider()
     st.caption("WAV, CSV, and guided example available.")
-    st.caption("Processed WAV playback and download available.")
+    st.caption("Processed CSV and WAV downloads available.")
 
 
 # Retrieve the selected stage and its position.
@@ -168,7 +177,7 @@ stage_index = stages.index(stage)
 
 st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
 
-# Show the name of the active signal.
+# Show the active signal's name.
 if "samples" in st.session_state:
     st.caption(
         "Current signal: "
@@ -210,7 +219,7 @@ if stage == "Upload":
                 "Mono: use channel 0. Stereo: 0 is left, 1 is right."
             )
 
-            # Load only when the user clicks this button.
+            # Load only when the user clicks the button.
             if st.button(
                 "Load recording",
                 key="load_recording",
@@ -231,7 +240,8 @@ if stage == "Upload":
                             uploaded_file.getvalue()
                         )
 
-                        # Reuse the shared loader and its validation.
+                        # Read and validate the selected channel.
+                        # The sampling rate comes from the WAV itself.
                         samples, fs_hz = load_wav(
                             input_path,
                             channel=int(channel),
@@ -244,7 +254,7 @@ if stage == "Upload":
                     )
 
                 else:
-                    # Store the validated recording and reset old results.
+                    # Store the new recording and reset previous results.
                     store_input(
                         samples,
                         fs_hz,
@@ -331,7 +341,7 @@ if stage == "Upload":
                     st.error(f"Could not load the CSV: {error}")
 
                 else:
-                    # Store the CSV data and clear old processing results.
+                    # Store CSV data and clear previous processing results.
                     store_input(
                         samples,
                         fs_hz,
@@ -348,7 +358,7 @@ if stage == "Upload":
 
                     st.info(
                         "CSV amplitudes retain their original units. "
-                        "The plots will label them as original CSV units."
+                        "Plots label them as original CSV units."
                     )
 
     with example_column:
@@ -372,7 +382,7 @@ if stage == "Upload":
                 fs_hz = 2000.0
                 duration_s = 5.0
 
-                # Calculate sample count and time in seconds.
+                # Calculate the sample count and time in seconds.
                 sample_count = int(fs_hz * duration_s)
                 time_s = np.arange(sample_count) / fs_hz
 
@@ -414,7 +424,7 @@ elif stage == "Inspect":
         st.warning("Go to Upload and load a signal first.")
 
     else:
-        # Retrieve the active signal and its amplitude label.
+        # Retrieve the input and amplitude label.
         samples = st.session_state["samples"]
         fs_hz = st.session_state["fs_hz"]
         is_demo = st.session_state.get("is_demo", True)
@@ -518,7 +528,7 @@ elif stage == "Inspect":
                 st.error(f"Frequency analysis failed: {error}")
 
             else:
-                # Select the detected frequencies and amplitudes.
+                # Select detected frequencies and amplitudes.
                 detected_hz = frequency_hz[peak_indices]
                 detected_amplitude = amplitude[peak_indices]
 
@@ -748,7 +758,10 @@ elif stage == "Configure":
                     st.write(recommendation["reason"])
 
                     if filter_type == "notch":
-                        st.metric("Notch centre", f"{cutoff_hz:g} Hz")
+                        st.metric(
+                            "Notch centre",
+                            f"{cutoff_hz:g} Hz",
+                        )
 
                     elif filter_type == "bandpass":
                         st.write(
@@ -805,7 +818,7 @@ elif stage == "Configure":
                         clear_processed_result()
 
                         try:
-                            # Reuse the shared filter implementation.
+                            # Reuse the shared filtering implementation.
                             processed = apply_filter(
                                 samples,
                                 fs_hz,
@@ -819,7 +832,7 @@ elif stage == "Configure":
                             st.error(f"Filtering failed: {error}")
 
                         else:
-                            # Store the processed signal and its settings.
+                            # Store the result and the settings that made it.
                             st.session_state["filtered_samples"] = processed
                             st.session_state["applied_filter"] = (
                                 recommendation.copy()
@@ -862,7 +875,7 @@ elif stage == "Compare":
         st.warning("Go to Configure and apply a filter first.")
 
     else:
-        # Retrieve the signals, rate, and amplitude label.
+        # Retrieve the signals, sampling rate, and amplitude label.
         original = st.session_state["samples"]
         processed = st.session_state["filtered_samples"]
         fs_hz = st.session_state["fs_hz"]
@@ -886,10 +899,12 @@ elif stage == "Compare":
 
             # Apply identical FFT processing to both signals.
             original_frequency_hz, original_amplitude = calculate_fft(
-                original, fs_hz
+                original,
+                fs_hz,
             )
             processed_frequency_hz, processed_amplitude = calculate_fft(
-                processed, fs_hz
+                processed,
+                fs_hz,
             )
 
         except ValueError as error:
@@ -943,6 +958,7 @@ elif stage == "Compare":
                     linewidth=1.4,
                     label="Original",
                 )
+
                 axis.plot(
                     time_ms,
                     processed[:preview_count],
@@ -978,6 +994,7 @@ elif stage == "Compare":
                     linewidth=1.4,
                     label="Original",
                 )
+
                 axis.plot(
                     processed_frequency_hz,
                     processed_amplitude,
@@ -1007,16 +1024,19 @@ elif stage == "Compare":
 
             if applied["filter_type"] == "notch":
                 centre_hz = applied["cutoff_hz"]
+
                 st.info(
                     f"Check that the component near {centre_hz:g} Hz "
                     "decreases while useful components remain "
                     "near their original amplitudes."
                 )
+
             elif applied["filter_type"] == "none":
                 st.info(
                     "No filtering was applied. The curves should overlap "
                     "and both RMS values should match."
                 )
+
             else:
                 st.info(
                     "Check that candidate interference decreases "
@@ -1029,6 +1049,7 @@ elif stage == "Compare":
 # ------------------------------------------------------------------
 elif stage == "Export":
     st.header("Download your processed signal")
+    st.caption("Save numerical data or prepare an audio download.")
 
     if "filtered_samples" not in st.session_state:
         st.warning("Go to Configure and apply a filter first.")
@@ -1039,25 +1060,68 @@ elif stage == "Export":
         fs_hz = st.session_state["fs_hz"]
         input_kind = st.session_state.get("input_kind", "wav")
 
+        with st.container(border=True):
+            st.subheader("Processed signal data")
+            st.caption(
+                "Download timestamps and processed amplitudes "
+                "without audio scaling."
+            )
+
+            # Create sample times in seconds, starting at zero.
+            export_time_s = np.arange(len(processed)) / fs_hz
+
+            # Arrange time and amplitude into two columns.
+            export_data = np.column_stack(
+                (export_time_s, processed)
+            )
+
+            # Create an in-memory text buffer for the CSV.
+            csv_buffer = StringIO()
+
+            # Use the column names expected by our shared CSV loader.
+            # Seventeen significant digits preserve float64 precision.
+            np.savetxt(
+                csv_buffer,
+                export_data,
+                delimiter=",",
+                header="time_s,amplitude",
+                comments="",
+                fmt="%.17g",
+            )
+
+            # Offer the completed CSV text for download.
+            st.download_button(
+                label="Download processed CSV",
+                data=csv_buffer.getvalue(),
+                file_name="processed_signal.csv",
+                mime="text/csv",
+                key="download_processed_csv",
+            )
+
+            st.caption(
+                "Amplitudes retain the processing units. "
+                "Timestamps start at zero; original timestamp offsets "
+                "and amplitude-unit metadata are not included."
+            )
+
         # CSV data may represent physical measurements rather than audio.
-        # Require an explicit choice before converting it to WAV.
+        # Ask the user to choose audio conversion explicitly.
         if input_kind == "csv":
             st.info(
-                "CSV samples retain their original units. WAV export "
-                "converts them to digital audio values and does not "
-                "preserve physical-unit metadata."
+                "WAV export converts CSV values to digital audio. "
+                "Use the CSV download to retain numerical amplitudes "
+                "without audio scaling or 16-bit quantization."
             )
 
             prepare_audio = st.checkbox(
                 "Convert this CSV signal to audio for playback and WAV export",
                 key="csv_audio_export",
             )
+
         else:
             prepare_audio = True
 
         if prepare_audio:
-            st.caption("Listen to the result, then save it as a WAV file.")
-
             try:
                 # Prepare the WAV in an isolated temporary folder.
                 with TemporaryDirectory() as temporary_folder:
@@ -1065,7 +1129,7 @@ elif stage == "Export":
                         Path(temporary_folder) / "processed_signal.wav"
                     )
 
-                    # Reuse the shared export algorithm.
+                    # Reuse the shared WAV export algorithm.
                     amplitude_divisor = save_processed_wav(
                         output_path,
                         processed,
@@ -1107,13 +1171,14 @@ elif stage == "Export":
 
                 if amplitude_divisor > 1.0:
                     st.info(
-                        "For export, sample values were divided by "
+                        "For WAV export, sample values were divided by "
                         f"{amplitude_divisor:.4f} to fit the audio range. "
-                        "Stored samples and comparison plots are unchanged."
+                        "Stored samples, plots, and CSV export are unchanged."
                     )
+
                 else:
                     st.caption(
-                        "No amplitude reduction was needed for export."
+                        "No amplitude reduction was needed for WAV export."
                     )
 
                 st.caption(
