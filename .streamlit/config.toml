@@ -1,0 +1,20 @@
+# Group the application's appearance settings.
+[theme]
+
+# Use the light theme as our starting point.
+base = "light"
+
+# Use dark teal for selected controls and interactive highlights.
+primaryColor = "#0F766E"
+
+# Give the main workspace a white background.
+backgroundColor = "#FFFFFF"
+
+# Use a soft grey background for widgets and the sidebar.
+secondaryBackgroundColor = "#F1F5F9"
+
+# Use dark navy text for readable contrast.
+textColor = "#0F172A"
+
+# Use a clean sans-serif font.
+font = "sans serif"
