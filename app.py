@@ -1,80 +1,102 @@
 """Streamlit interface for the Signal Processing Lab."""
 
-# Import NumPy for generating the guided example and time labels.
+# Generate example signals and time labels.
 import numpy as np
 
-# Import Streamlit for building the web interface.
+# Build the web interface.
 import streamlit as st
 
-# Import Matplotlib for plotting signals and spectra.
+# Plot signals and spectra.
 import matplotlib.pyplot as plt
 
-# Create temporary folders for preparing WAV downloads.
+# Prepare uploaded and exported files in temporary folders.
 from tempfile import TemporaryDirectory
 
-# Build file paths and read the completed WAV file.
+# Build paths and read or write file bytes.
 from pathlib import Path
 
-# Import the same processing functions used by our teaching notebook.
+# Reuse the processing functions from our shared package.
 from signal_lab.validation import validate_signal
 from signal_lab.spectral import calculate_fft, detect_peaks
 from signal_lab.recommendation import recommend_filter
 from signal_lab.filters import apply_filter
 from signal_lab.metrics import compare_rms
-
-# Load WAV recordings and export processed WAV audio.
 from signal_lab.data_io import load_wav, save_processed_wav
 
 
-# Configure the browser title and use the available page width.
+# Configure the browser title and page width.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
-# Define the stages in their intended order.
+# Define the workflow order.
 stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
 
-# Start at Upload when this browser session has no selected stage.
+# Select Upload when a new session starts.
 if "current_stage" not in st.session_state:
     st.session_state["current_stage"] = "Upload"
 
 
 def select_stage(stage_name):
-    """Remember the stage selected by a navigation button."""
+    """Change the selected workflow stage."""
 
-    # Streamlit reruns the page after this callback updates the stage.
     st.session_state["current_stage"] = stage_name
 
 
 def clear_processed_result():
-    """Remove a result when its input or configuration changes."""
+    """Remove results belonging to an old input or configuration."""
 
-    # Remove stored processed samples, if present.
+    # Missing keys are harmless because the default is None.
     st.session_state.pop("filtered_samples", None)
-
-    # Remove the settings associated with the previous result.
     st.session_state.pop("applied_filter", None)
-
-    # Remove the useful band associated with the previous result.
     st.session_state.pop("applied_band", None)
 
 
+def store_input(samples, fs_hz, source_name, is_demo):
+    """Store a validated input and reset its previous settings."""
+
+    # Store the input, sampling rate, and source information.
+    st.session_state["samples"] = samples
+    st.session_state["fs_hz"] = fs_hz
+    st.session_state["signal_source"] = source_name
+    st.session_state["is_demo"] = is_demo
+
+    # Previous processed samples belong to the previous input.
+    clear_processed_result()
+
+    # Use known settings for the demo.
+    if is_demo:
+        useful_band = (80.0, 250.0)
+
+    # For recordings, start with a broad band below Nyquist.
+    # This is an initial setting, not an automatic noise diagnosis.
+    else:
+        useful_band = (0.0, float(0.9 * (fs_hz / 2)))
+
+    st.session_state["useful_band"] = useful_band
+
+    # Remove old widget values so the new defaults are displayed.
+    st.session_state.pop("useful_low_hz", None)
+    st.session_state.pop("useful_high_hz", None)
+
+
 def style_plot(axis, x_label, y_label):
-    """Apply consistent presentation settings to each plot."""
+    """Apply consistent labels and styling."""
 
-    # Label the horizontal axis, including its units.
     axis.set_xlabel(x_label)
-
-    # Label the vertical axis, including its units.
     axis.set_ylabel(y_label)
-
-    # Add a faint grid to make values easier to read.
     axis.grid(alpha=0.15)
-
-    # Hide unnecessary borders around the plot.
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
 
 
-# Divide the page header into brand and status columns.
+def display_plot(figure):
+    """Display a figure and release its plotting resources."""
+
+    figure.tight_layout()
+    st.pyplot(figure)
+    plt.close(figure)
+
+
+# Build the application header.
 brand_column, status_column = st.columns([4, 1])
 
 with brand_column:
@@ -82,7 +104,7 @@ with brand_column:
     st.caption("AI Signal Processing Lab · Explore. Filter. Compare.")
 
 with status_column:
-    st.info("Demo workspace")
+    st.info("Signal workspace")
 
 st.divider()
 
@@ -92,9 +114,8 @@ with st.sidebar:
     st.title("Signal Lab")
     st.caption("YOUR WORKSPACE")
 
-    # Create a navigation button for each stage.
     for number, stage_name in enumerate(stages, start=1):
-        # Identify the selected stage so its button can be highlighted.
+        # Highlight the current stage.
         is_selected = (
             st.session_state["current_stage"] == stage_name
         )
@@ -109,15 +130,22 @@ with st.sidebar:
         )
 
     st.divider()
-    st.caption("Built-in example available.")
+    st.caption("WAV uploads and guided example available.")
     st.caption("Processed WAV playback and download available.")
 
 
-# Retrieve the current stage and its position in the workflow.
+# Retrieve the selected stage.
 stage = st.session_state["current_stage"]
 stage_index = stages.index(stage)
 
 st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
+
+# Show which input is currently being analysed.
+if "samples" in st.session_state:
+    st.caption(
+        "Current signal: "
+        + st.session_state.get("signal_source", "Built-in example")
+    )
 
 
 # ------------------------------------------------------------------
@@ -125,24 +153,96 @@ st.caption(f"STEP {stage_index + 1:02d} OF {len(stages):02d}")
 # ------------------------------------------------------------------
 if stage == "Upload":
     st.header("Start with a signal")
-    st.caption("Use the guided example to explore the complete workflow.")
+    st.caption("Upload a WAV recording or try the guided example.")
 
     upload_column, example_column = st.columns(2)
 
     with upload_column:
         with st.container(border=True):
             st.subheader("Your recording")
-            st.write("Upload a WAV recording or CSV signal.")
+            st.write("Analyse one channel from a WAV recording.")
 
-            # Keep uploads disabled until we connect the loading workflow.
-            st.file_uploader(
-                "Choose a signal file",
-                type=["wav", "csv"],
-                disabled=True,
-                key="planned_upload",
+            # Enable WAV uploads and retrieve the selected file.
+            uploaded_file = st.file_uploader(
+                "Choose a WAV file",
+                type=["wav"],
+                key="wav_upload",
             )
 
-            st.caption("File uploads will be connected in a later step.")
+            # Channel numbering starts at zero.
+            channel = st.number_input(
+                "Audio channel",
+                min_value=0,
+                value=0,
+                step=1,
+                key="wav_channel",
+            )
+
+            st.caption(
+                "Mono: use channel 0. Stereo: 0 is left, 1 is right."
+            )
+
+            # Choosing a file alone does not replace the current input.
+            # Clicking this button loads the selected recording.
+            if st.button(
+                "Load recording",
+                key="load_recording",
+                type="primary",
+                width="stretch",
+                disabled=uploaded_file is None,
+            ):
+                try:
+                    # Use an isolated folder for this uploaded recording.
+                    with TemporaryDirectory() as temporary_folder:
+                        input_path = (
+                            Path(temporary_folder)
+                            / "uploaded_recording.wav"
+                        )
+
+                        # Save the uploaded bytes for our shared loader.
+                        input_path.write_bytes(
+                            uploaded_file.getvalue()
+                        )
+
+                        # Read the channel and sampling rate from the WAV.
+                        # The loader also validates the signal.
+                        samples, fs_hz = load_wav(
+                            input_path,
+                            channel=int(channel),
+                        )
+
+                except (ValueError, OSError, EOFError) as error:
+                    # Remove old data to prevent accidental reuse.
+                    for key in (
+                        "samples",
+                        "fs_hz",
+                        "signal_source",
+                        "is_demo",
+                    ):
+                        st.session_state.pop(key, None)
+
+                    clear_processed_result()
+
+                    st.error(
+                        f"Could not load the recording: {error}"
+                    )
+
+                else:
+                    # Store the new recording and clear previous results.
+                    store_input(
+                        samples,
+                        fs_hz,
+                        source_name=uploaded_file.name,
+                        is_demo=False,
+                    )
+
+                    st.success(
+                        f"Loaded {uploaded_file.name} · "
+                        f"{fs_hz:g} Hz · "
+                        f"{len(samples) / fs_hz:.2f} seconds"
+                    )
+
+            st.caption("CSV uploads will be connected separately.")
 
     with example_column:
         with st.container(border=True):
@@ -157,46 +257,41 @@ if stage == "Upload":
 
             if st.button(
                 "Load example",
+                key="load_example",
                 type="primary",
                 width="stretch",
             ):
-                # Set the sampling rate in samples per second, or Hz.
+                # Set sampling rate in Hz and duration in seconds.
                 fs_hz = 2000.0
-
-                # Set the recording duration in seconds.
                 duration_s = 5.0
 
-                # Calculate the total number of samples.
+                # Calculate the sample count and sample times.
                 sample_count = int(fs_hz * duration_s)
-
-                # Calculate each sample's time in seconds.
                 time_s = np.arange(sample_count) / fs_hz
 
-                # Generate the useful tone with amplitude 1.
+                # Generate the useful and unwanted components.
                 useful_signal = np.sin(
                     2 * np.pi * 100.0 * time_s
                 )
-
-                # Generate the unwanted tone with amplitude 0.5.
                 unwanted_signal = 0.5 * np.sin(
                     2 * np.pi * 400.0 * time_s
                 )
 
-                # Validate the combined signal with our shared function.
+                # Validate their sum before storing it.
                 samples = validate_signal(
                     useful_signal + unwanted_signal,
                     fs_hz,
                 )
 
-                # Store the input so it survives navigation.
-                st.session_state["samples"] = samples
-                st.session_state["fs_hz"] = fs_hz
-
-                # A new input requires a new processed result.
-                clear_processed_result()
+                store_input(
+                    samples,
+                    fs_hz,
+                    source_name="Built-in example",
+                    is_demo=True,
+                )
 
     if "samples" in st.session_state:
-        st.success("Example ready. Continue to Inspect below.")
+        st.success("Signal ready. Continue to Inspect below.")
 
 
 # ------------------------------------------------------------------
@@ -207,14 +302,15 @@ elif stage == "Inspect":
     st.caption("Inspect the waveform and its detected frequencies.")
 
     if "samples" not in st.session_state:
-        st.warning("Go to Upload and load the example first.")
+        st.warning("Go to Upload and load a signal first.")
 
     else:
-        # Retrieve the original samples and sampling rate.
+        # Retrieve the active input.
         samples = st.session_state["samples"]
         fs_hz = st.session_state["fs_hz"]
+        is_demo = st.session_state.get("is_demo", True)
 
-        # Display three measurements side by side.
+        # Display measurements in three columns.
         rate_column, duration_column, nyquist_column = st.columns(3)
 
         with rate_column:
@@ -239,16 +335,14 @@ elif stage == "Inspect":
             st.subheader("Signal preview")
             st.caption("Original signal · first 50 milliseconds")
 
-            # Limit the preview to the first 0.05 seconds.
+            # Keep at least two samples in the preview.
             preview_count = min(
                 len(samples),
-                int(0.05 * fs_hz),
+                max(2, int(0.05 * fs_hz)),
             )
 
-            # Convert sample positions into time in milliseconds.
-            time_ms = (
-                np.arange(preview_count) / fs_hz
-            ) * 1000.0
+            # Convert sample positions to milliseconds.
+            time_ms = np.arange(preview_count) / fs_hz * 1000.0
 
             figure, axis = plt.subplots(figsize=(8, 3.8))
 
@@ -265,31 +359,42 @@ elif stage == "Inspect":
                 "Amplitude (dimensionless)",
             )
 
-            axis.set_xlim(0, 50)
-            figure.tight_layout()
+            axis.set_xlim(0, max(50.0, float(time_ms[-1])))
 
             plot_column, details_column = st.columns([3, 1])
 
             with plot_column:
-                st.pyplot(figure)
+                display_plot(figure)
 
             with details_column:
-                st.markdown("**Known demo tones**")
-                st.metric("Useful tone", "100 Hz")
-                st.metric("Unwanted tone", "400 Hz")
-                st.caption(
-                    "These roles are known because we generated the example."
-                )
-
-            # Release the figure after displaying it.
-            plt.close(figure)
+                # Known tone roles apply only to the generated example.
+                if is_demo:
+                    st.markdown("**Known demo tones**")
+                    st.metric("Useful tone", "100 Hz")
+                    st.metric("Unwanted tone", "400 Hz")
+                    st.caption(
+                        "These roles are known because we generated "
+                        "the example."
+                    )
+                else:
+                    st.markdown("**Uploaded recording**")
+                    st.write(
+                        st.session_state.get(
+                            "signal_source",
+                            "WAV recording",
+                        )
+                    )
+                    st.caption(
+                        "Tone roles are not known in advance. "
+                        "Review the spectrum before choosing a useful band."
+                    )
 
         with st.container(border=True):
             st.subheader("Frequency analysis")
             st.caption("FFT of the complete recording")
 
             try:
-                # Use our shared peak detector and FFT calculation.
+                # Run the shared FFT and peak detector.
                 frequency_hz, amplitude, peak_indices = detect_peaks(
                     samples,
                     fs_hz,
@@ -301,7 +406,7 @@ elif stage == "Inspect":
                 st.error(f"Frequency analysis failed: {error}")
 
             else:
-                # Select the detected frequencies and their amplitudes.
+                # Select detected peak frequencies and amplitudes.
                 detected_hz = frequency_hz[peak_indices]
                 detected_amplitude = amplitude[peak_indices]
 
@@ -334,9 +439,7 @@ elif stage == "Inspect":
                 if len(peak_indices) > 0:
                     axis.legend(frameon=False)
 
-                figure.tight_layout()
-                st.pyplot(figure)
-                plt.close(figure)
+                display_plot(figure)
 
                 if len(peak_indices) == 0:
                     st.info(
@@ -356,37 +459,37 @@ elif stage == "Inspect":
 
                 st.caption(
                     "Minimum height: 10% of the largest FFT amplitude. "
-                    "Minimum prominence: 5%. "
+                    "Minimum prominence: 5% of that amplitude. "
                     "Minimum peak separation: 5 Hz."
                 )
 
         st.info(
             "A detected frequency is not automatically noise. "
-            "In this example, we know that 100 Hz is useful "
-            "and 400 Hz is unwanted."
+            "Decide which components matter for your recording."
         )
 
         with st.expander("How do I read this signal?"):
             st.write(
-                "The waveform shows how amplitude changes over time. "
-                "This preview displays only the first 50 milliseconds."
+                "The waveform shows amplitude against time. "
+                "The spectrum shows estimated amplitudes against frequency."
             )
 
             st.write(
-                "Amplitude is dimensionless because this is a generated "
-                "digital signal."
+                "WAV integer samples are converted to dimensionless "
+                "digital amplitudes by our loader. Floating-point WAV "
+                "values are retained. These values are not calibrated "
+                "sound-pressure measurements."
             )
 
             st.write(
-                "The 100 Hz tone completes five cycles in 50 milliseconds. "
-                "The 400 Hz tone adds faster changes to the waveform."
+                f"This signal is sampled at {fs_hz:g} samples per second. "
+                f"Its Nyquist frequency is {fs_hz / 2:g} Hz."
             )
 
             st.write(
-                "The sampling rate is 2,000 samples per second. "
-                "Its Nyquist frequency is 1,000 Hz. Frequencies above "
-                "that limit require appropriate filtering before sampling "
-                "to prevent aliasing."
+                "Preventing aliasing requires appropriate filtering "
+                "before sampling. A digital filter cannot undo "
+                "aliasing already present in a recording."
             )
 
             st.write(
@@ -394,6 +497,13 @@ elif stage == "Inspect":
                 "applies a Hann window, and compensates for its "
                 "amplitude scaling."
             )
+
+            if is_demo:
+                st.write(
+                    "In the guided example, the useful 100 Hz tone "
+                    "completes five cycles in 50 milliseconds. "
+                    "The unwanted 400 Hz tone adds faster changes."
+                )
 
 
 # ------------------------------------------------------------------
@@ -404,17 +514,21 @@ elif stage == "Configure":
     st.caption("Set the useful band, review the suggestion, and apply it.")
 
     if "samples" not in st.session_state:
-        st.warning("Go to Upload and load the example first.")
+        st.warning("Go to Upload and load a signal first.")
 
     else:
-        # Retrieve the input and calculate its Nyquist frequency.
+        # Retrieve the input and Nyquist frequency.
         samples = st.session_state["samples"]
         fs_hz = st.session_state["fs_hz"]
         nyquist_hz = fs_hz / 2
+        is_demo = st.session_state.get("is_demo", True)
 
-        # Remember the useful band separately from the input widgets.
+        # Supply defaults for sessions created before this update.
         if "useful_band" not in st.session_state:
-            st.session_state["useful_band"] = (80.0, 250.0)
+            st.session_state["useful_band"] = (
+                0.0,
+                float(0.9 * nyquist_hz),
+            )
 
         saved_low_hz, saved_high_hz = st.session_state["useful_band"]
 
@@ -447,16 +561,23 @@ elif stage == "Configure":
                     key="useful_high_hz",
                 )
 
-            st.caption(
-                "For the guided example, use 80–250 Hz "
-                "to preserve the 100 Hz tone."
-            )
+            if is_demo:
+                st.caption(
+                    "For the guided example, use 80–250 Hz "
+                    "to preserve the 100 Hz tone."
+                )
+            else:
+                st.caption(
+                    "The initial band is a starting point. "
+                    "Use your recording's purpose and spectrum "
+                    "to choose what to preserve."
+                )
 
-        # Store the currently declared useful band.
+        # Remember the current band.
         current_band = (useful_low_hz, useful_high_hz)
         st.session_state["useful_band"] = current_band
 
-        # Remove a processed result if its useful band has changed.
+        # A changed band invalidates the previous processed result.
         if st.session_state.get("applied_band") != current_band:
             clear_processed_result()
 
@@ -467,7 +588,7 @@ elif stage == "Configure":
 
         else:
             try:
-                # Detect prominent frequencies with the shared detector.
+                # Detect peaks using the same settings as Inspect.
                 frequency_hz, amplitude, peak_indices = detect_peaks(
                     samples,
                     fs_hz,
@@ -475,10 +596,9 @@ elif stage == "Configure":
                     minimum_separation_hz=5.0,
                 )
 
-                # Extract the frequencies of the detected peaks.
                 detected_hz = frequency_hz[peak_indices]
 
-                # Ask the shared recommendation function for a candidate.
+                # Reuse our explainable recommendation function.
                 recommendation = recommend_filter(
                     detected_hz,
                     fs_hz,
@@ -491,7 +611,7 @@ elif stage == "Configure":
                 st.error(f"Could not recommend a filter: {error}")
 
             else:
-                # Convert internal names into readable interface labels.
+                # Map internal names to readable labels.
                 filter_labels = {
                     "none": "Keep signal unchanged",
                     "notch": "Notch filter",
@@ -566,11 +686,10 @@ elif stage == "Configure":
                         type="primary",
                         width="stretch",
                     ):
-                        # Clear any previous result before applying settings.
+                        # Remove the previous result before processing.
                         clear_processed_result()
 
                         try:
-                            # Apply the shared processing function.
                             processed = apply_filter(
                                 samples,
                                 fs_hz,
@@ -584,7 +703,7 @@ elif stage == "Configure":
                             st.error(f"Filtering failed: {error}")
 
                         else:
-                            # Store the result and the settings that made it.
+                            # Store the result with its exact settings.
                             st.session_state["filtered_samples"] = processed
                             st.session_state["applied_filter"] = (
                                 recommendation.copy()
@@ -609,7 +728,6 @@ elif stage == "Configure":
                         "Processed samples: "
                         f"{len(st.session_state['filtered_samples']):,}"
                     )
-
                 else:
                     st.info(
                         "Review the suggestion and apply it "
@@ -628,12 +746,12 @@ elif stage == "Compare":
         st.warning("Go to Configure and apply a filter first.")
 
     else:
-        # Retrieve the original, result, and sampling rate.
+        # Retrieve the input and processed result.
         original = st.session_state["samples"]
         processed = st.session_state["filtered_samples"]
         fs_hz = st.session_state["fs_hz"]
 
-        # Retrieve the settings associated with this processed result.
+        # Retrieve the settings associated with this result.
         applied = st.session_state["applied_filter"]
         applied_low_hz, applied_high_hz = (
             st.session_state["applied_band"]
@@ -646,10 +764,10 @@ elif stage == "Compare":
         )
 
         try:
-            # Calculate RMS using our shared comparison function.
+            # Calculate both RMS values through our shared module.
             measurements = compare_rms(original, processed)
 
-            # Use the same FFT function and scaling for both signals.
+            # Use identical FFT processing for both signals.
             original_frequency_hz, original_amplitude = calculate_fft(
                 original,
                 fs_hz,
@@ -692,16 +810,15 @@ elif stage == "Compare":
                     "First 50 milliseconds · edge transients may be visible."
                 )
 
-                # Select the first 50 milliseconds of both signals.
+                # Choose the same preview interval for both signals.
                 preview_count = min(
                     len(original),
-                    int(0.05 * fs_hz),
+                    max(2, int(0.05 * fs_hz)),
                 )
 
-                # Calculate the preview's time labels in milliseconds.
                 time_ms = (
-                    np.arange(preview_count) / fs_hz
-                ) * 1000.0
+                    np.arange(preview_count) / fs_hz * 1000.0
+                )
 
                 figure, axis = plt.subplots(figsize=(8, 3.8))
 
@@ -728,11 +845,12 @@ elif stage == "Compare":
                     "Amplitude (dimensionless)",
                 )
 
-                axis.set_xlim(0, 50)
+                axis.set_xlim(
+                    0,
+                    max(50.0, float(time_ms[-1])),
+                )
                 axis.legend(frameon=False)
-                figure.tight_layout()
-                st.pyplot(figure)
-                plt.close(figure)
+                display_plot(figure)
 
             with st.container(border=True):
                 st.subheader("Spectrum comparison")
@@ -760,7 +878,7 @@ elif stage == "Compare":
                     label="Processed",
                 )
 
-                # Highlight the user's useful band, not the filter response.
+                # Highlight the declared band, not the filter response.
                 axis.axvspan(
                     applied_low_hz,
                     applied_high_hz,
@@ -777,12 +895,9 @@ elif stage == "Compare":
 
                 axis.set_xlim(0, fs_hz / 2)
                 axis.legend(frameon=False)
-                figure.tight_layout()
-                st.pyplot(figure)
-                plt.close(figure)
+                display_plot(figure)
 
             if applied["filter_type"] == "notch":
-                # Display the actual applied notch centre.
                 centre_hz = applied["cutoff_hz"]
 
                 st.info(
@@ -815,30 +930,25 @@ elif stage == "Export":
         st.warning("Go to Configure and apply a filter first.")
 
     else:
-        # Retrieve the processed samples without modifying them.
+        # Retrieve the processed samples and sampling rate.
         processed = st.session_state["filtered_samples"]
-
-        # Retrieve the sampling rate in hertz.
         fs_hz = st.session_state["fs_hz"]
 
         try:
-            # Create an isolated temporary folder for this export.
-            # Python removes the folder when the block finishes.
+            # Prepare the WAV in an isolated temporary folder.
             with TemporaryDirectory() as temporary_folder:
-                # Build the path for the temporary WAV file.
                 output_path = (
                     Path(temporary_folder) / "processed_signal.wav"
                 )
 
-                # Save audio using the shared export function.
-                # Its return value reports any amplitude reduction.
+                # Reuse the shared export algorithm.
                 amplitude_divisor = save_processed_wav(
                     output_path,
                     processed,
                     fs_hz,
                 )
 
-                # Read the WAV into memory before deleting its folder.
+                # Keep the bytes before the temporary folder is removed.
                 wav_bytes = output_path.read_bytes()
 
         except (ValueError, OSError) as error:
@@ -849,7 +959,6 @@ elif stage == "Export":
                 st.subheader("Your processed audio")
                 st.caption("Mono WAV · 16-bit PCM")
 
-                # Display the exported recording's rate and duration.
                 rate_column, duration_column = st.columns(2)
 
                 with rate_column:
@@ -861,10 +970,9 @@ elif stage == "Export":
                         f"{len(processed) / fs_hz:.2f} s",
                     )
 
-                # Play the same WAV bytes used by the download button.
+                # Play the exact WAV offered for download.
                 st.audio(wav_bytes, format="audio/wav")
 
-                # Download the prepared WAV to the user's computer.
                 st.download_button(
                     label="Download processed WAV",
                     data=wav_bytes,
@@ -873,7 +981,6 @@ elif stage == "Export":
                     key="download_processed_wav",
                 )
 
-            # Explain whether the export function reduced amplitudes.
             if amplitude_divisor > 1.0:
                 st.info(
                     "For export, amplitudes were divided by "
@@ -900,7 +1007,7 @@ st.divider()
 back_column, continue_column = st.columns(2)
 
 with back_column:
-    # The first stage has no previous stage.
+    # Display Back except on the first stage.
     if stage_index > 0:
         previous_stage = stages[stage_index - 1]
 
@@ -912,16 +1019,15 @@ with back_column:
         )
 
 with continue_column:
-    # Export is the final stage, so it needs no Continue button.
+    # Display Continue except on the final stage.
     if stage_index < len(stages) - 1:
         next_stage = stages[stage_index + 1]
 
-        # Check whether this session has an input and processed result.
+        # Check which data is available in this session.
         signal_loaded = "samples" in st.session_state
         result_available = "filtered_samples" in st.session_state
 
-        # Upload and Inspect need an input.
-        # Configure and Compare need a processed result.
+        # Early stages require input; later stages require a result.
         can_continue = (
             signal_loaded and stage in ("Upload", "Inspect")
         ) or (
