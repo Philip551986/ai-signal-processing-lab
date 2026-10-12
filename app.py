@@ -10,7 +10,7 @@ from signal_lab.validation import validate_signal
 # Set the browser-tab title and use a wide page layout.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
-# Divide the header into two columns with a 4-to-1 width ratio.
+# Divide the header into columns with a 4-to-1 width ratio.
 brand_column, status_column = st.columns([4, 1])
 
 # Place the brand in the wider column.
@@ -84,29 +84,47 @@ if stage == "Upload":
 
 # Display the Inspect stage.
 elif stage == "Inspect":
-    # Display the stage heading.
-    st.header("2. Inspect your signal")
+    # Display a heading matching our chosen design.
+    st.header("Understand your signal")
 
-    # Give instructions if no signal has been loaded.
+    # Explain the purpose of this stage.
+    st.caption("Check your signal's key properties before choosing a filter.")
+
+    # Show guidance if no signal has been loaded.
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the built-in example first.")
 
-    # Display measurements when a signal is available.
+    # Display measurement cards when a signal is available.
     else:
-        # Retrieve the stored samples.
+        # Retrieve the stored signal samples.
         samples = st.session_state["samples"]
 
         # Retrieve the sampling rate in hertz.
         fs_hz = st.session_state["fs_hz"]
 
-        # Display the sampling rate.
-        st.metric("Sampling rate", f"{fs_hz:g} Hz")
+        # Create three columns of equal width.
+        rate_card, duration_card, nyquist_card = st.columns(3)
 
-        # Calculate and display the duration in seconds.
-        st.metric("Duration", f"{len(samples) / fs_hz:.2f} s")
+        # Put the sampling-rate card in the first column.
+        with rate_card:
+            # Draw a border around the card.
+            with st.container(border=True):
+                # Display the sampling rate with a thousands separator.
+                st.metric("Sampling rate", f"{fs_hz:,.0f} Hz")
 
-        # Calculate and display the Nyquist frequency in hertz.
-        st.metric("Nyquist frequency", f"{fs_hz / 2:g} Hz")
+        # Put the duration card in the second column.
+        with duration_card:
+            # Draw a matching border around the card.
+            with st.container(border=True):
+                # Divide sample count by sampling rate to get seconds.
+                st.metric("Duration", f"{len(samples) / fs_hz:.2f} s")
+
+        # Put the Nyquist card in the third column.
+        with nyquist_card:
+            # Draw a matching border around the card.
+            with st.container(border=True):
+                # Display half the sampling rate in hertz.
+                st.metric("Nyquist frequency", f"{fs_hz / 2:,.0f} Hz")
 
 # Display placeholders for the remaining stages.
 else:
