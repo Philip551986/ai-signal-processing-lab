@@ -83,50 +83,88 @@ stage = st.session_state["current_stage"]
 
 # Display the Upload stage.
 if stage == "Upload":
-    # Display the stage heading.
-    st.header("1. Choose your signal")
+    # Display the main heading.
+    st.header("Start with a signal")
 
-    # Explain which input is currently available.
-    st.caption("Start with the guided example. File uploads are coming later.")
+    # Explain the available starting point.
+    st.caption("Explore the guided example to get familiar with the lab.")
 
-    # Describe the example's known frequency components.
-    st.write(
-        "Example: a useful 100 Hz tone plus an unwanted 400 Hz tone, "
-        "sampled at 2,000 samples per second for 5 seconds."
-    )
+    # Create two equally sized columns.
+    upload_column, example_column = st.columns(2)
 
-    # Generate the example when the button is clicked.
-    if st.button("Load built-in example", type="primary"):
-        # Set the sampling rate in hertz (samples per second).
-        fs_hz = 2000.0
+    # Place the future upload area in the left column.
+    with upload_column:
+        # Group the upload content inside a bordered panel.
+        with st.container(border=True):
+            # Display the panel heading.
+            st.subheader("Your recording")
 
-        # Set the duration in seconds.
-        duration_s = 5.0
+            # Explain which file formats are planned.
+            st.write("WAV audio or CSV signal measurements.")
 
-        # Calculate the total number of samples.
-        sample_count = int(fs_hz * duration_s)
+            # Display the future upload control without enabling it.
+            st.file_uploader(
+                "Choose a signal file",
+                type=["wav", "csv"],
+                disabled=True,
+                key="planned_upload",
+            )
 
-        # Calculate each sample's time in seconds.
-        time_s = np.arange(sample_count) / fs_hz
+            # Explain why uploads are disabled.
+            st.caption("File uploads will be connected in a later step.")
 
-        # Generate a useful 100 Hz tone with dimensionless amplitude 1.
-        useful_signal = np.sin(2 * np.pi * 100.0 * time_s)
+    # Place the working example in the right column.
+    with example_column:
+        # Group the example content inside a matching panel.
+        with st.container(border=True):
+            # Display the panel heading.
+            st.subheader("Try the guided example")
 
-        # Generate an unwanted 400 Hz tone with dimensionless amplitude 0.5.
-        unwanted_signal = 0.5 * np.sin(2 * np.pi * 400.0 * time_s)
+            # Describe the known signal components.
+            st.write(
+                "A useful 100 Hz tone mixed with an unwanted 400 Hz tone."
+            )
 
-        # Combine the tones and validate the signal.
-        samples = validate_signal(useful_signal + unwanted_signal, fs_hz)
+            # Display the example's recording details.
+            st.caption(
+                "5 seconds · 2,000 Hz sampling rate · Dimensionless amplitude"
+            )
 
-        # Preserve the samples between stages.
-        st.session_state["samples"] = samples
+            # Generate the example when this button is clicked.
+            if st.button("Load example", type="primary", width="stretch"):
+                # Set the sampling rate in hertz (samples per second).
+                fs_hz = 2000.0
 
-        # Preserve the sampling rate alongside the samples.
-        st.session_state["fs_hz"] = fs_hz
+                # Set the recording duration in seconds.
+                duration_s = 5.0
 
-    # Confirm when the example is available.
-    if "samples" in st.session_state:
-        st.success("Example loaded. Continue to Inspect below.")
+                # Calculate the total sample count.
+                sample_count = int(fs_hz * duration_s)
+
+                # Calculate each sample's time in seconds.
+                time_s = np.arange(sample_count) / fs_hz
+
+                # Generate the useful tone with dimensionless amplitude 1.
+                useful_signal = np.sin(2 * np.pi * 100.0 * time_s)
+
+                # Generate the unwanted tone with dimensionless amplitude 0.5.
+                unwanted_signal = 0.5 * np.sin(2 * np.pi * 400.0 * time_s)
+
+                # Validate the combined signal using our shared function.
+                samples = validate_signal(
+                    useful_signal + unwanted_signal,
+                    fs_hz,
+                )
+
+                # Remember the samples between stages.
+                st.session_state["samples"] = samples
+
+                # Remember the sampling rate alongside the samples.
+                st.session_state["fs_hz"] = fs_hz
+
+            # Confirm when the example is ready.
+            if "samples" in st.session_state:
+                st.success("Example ready. Continue to Inspect below.")
 
 # Display the Inspect stage.
 elif stage == "Inspect":
@@ -140,7 +178,7 @@ elif stage == "Inspect":
     if "samples" not in st.session_state:
         st.warning("Go to Upload and load the built-in example first.")
 
-    # Display the measurements and waveform when samples are available.
+    # Display measurements and waveform when samples are available.
     else:
         # Retrieve the stored samples.
         samples = st.session_state["samples"]
@@ -148,7 +186,7 @@ elif stage == "Inspect":
         # Retrieve the sampling rate in hertz.
         fs_hz = st.session_state["fs_hz"]
 
-        # Create three columns of equal width.
+        # Create three equally sized measurement columns.
         rate_card, duration_card, nyquist_card = st.columns(3)
 
         # Place the sampling-rate card in the first column.
