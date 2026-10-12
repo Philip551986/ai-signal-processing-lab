@@ -13,6 +13,9 @@ from signal_lab.validation import validate_signal
 # Configure the browser-tab title and page width.
 st.set_page_config(page_title="Signal Lab", layout="wide")
 
+# Define the workflow stages in order.
+stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
+
 # Start on Upload when no stage has been selected.
 if "current_stage" not in st.session_state:
     st.session_state["current_stage"] = "Upload"
@@ -51,9 +54,6 @@ with st.sidebar:
     # Label the navigation area.
     st.caption("YOUR WORKSPACE")
 
-    # Define the stages in order.
-    stages = ["Upload", "Inspect", "Configure", "Compare", "Export"]
-
     # Create one numbered button for each stage.
     for number, stage_name in enumerate(stages, start=1):
         # Check whether this is the selected stage.
@@ -69,7 +69,7 @@ with st.sidebar:
             args=(stage_name,),
         )
 
-    # Separate navigation from the supporting information.
+    # Separate navigation from supporting information.
     st.divider()
 
     # Identify the available input.
@@ -126,7 +126,7 @@ if stage == "Upload":
 
     # Confirm when the example is available.
     if "samples" in st.session_state:
-        st.success("Example loaded. Select 02 · Inspect in the sidebar.")
+        st.success("Example loaded. Continue to Inspect below.")
 
 # Display the Inspect stage.
 elif stage == "Inspect":
@@ -237,3 +237,55 @@ else:
 
     # Explain which stages are currently available.
     st.info("This stage is coming next. Use Upload and Inspect for now.")
+
+# Separate the stage content from the navigation controls.
+st.divider()
+
+# Find the current stage's position in the workflow.
+stage_index = stages.index(stage)
+
+# Create columns for backward and forward navigation.
+back_column, next_column = st.columns(2)
+
+# Place the Back button in the left column.
+with back_column:
+    # Show Back only when an earlier stage exists.
+    if stage_index > 0:
+        # Retrieve the previous stage's name.
+        previous_stage = stages[stage_index - 1]
+
+        # Navigate backward using the existing callback.
+        st.button(
+            f"← Back to {previous_stage}",
+            key="back_stage",
+            on_click=select_stage,
+            args=(previous_stage,),
+        )
+
+# Place the Continue button in the right column.
+with next_column:
+    # Show Continue only when another stage exists.
+    if stage_index < len(stages) - 1:
+        # Retrieve the next stage's name.
+        next_stage = stages[stage_index + 1]
+
+        # Check whether a signal has been loaded.
+        signal_loaded = "samples" in st.session_state
+
+        # Allow forward navigation from Upload after loading a signal.
+        can_continue = stage == "Upload" and signal_loaded
+
+        # Display the forward navigation button.
+        st.button(
+            f"Continue to {next_stage} →",
+            key="next_stage",
+            type="primary",
+            width="stretch",
+            disabled=not can_continue,
+            on_click=select_stage,
+            args=(next_stage,),
+        )
+
+        # Explain why later Continue buttons are disabled.
+        if stage != "Upload":
+            st.caption("The next processing stage is still being built.")
