@@ -230,8 +230,8 @@ elif stage == "Inspect":
             # Convert sample positions to time in milliseconds.
             preview_time_ms = np.arange(preview_count) / fs_hz * 1000
 
-            # Create a figure and plotting area.
-            figure, axis = plt.subplots(figsize=(10, 3))
+            # Create a taller plot so the waveform is easier to inspect.
+            figure, axis = plt.subplots(figsize=(8, 3.8))
 
             # Plot the original signal in teal.
             axis.plot(
