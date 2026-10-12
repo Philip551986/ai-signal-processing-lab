@@ -21,7 +21,9 @@ from signal_lab.spectral import calculate_fft, detect_peaks
 from signal_lab.recommendation import recommend_filter
 from signal_lab.filters import apply_filter
 from signal_lab.metrics import compare_rms
-from signal_lab.data_io import load_wav, save_processed_wav
+
+# Load WAV or CSV signals and export processed WAV audio.
+from signal_lab.data_io import load_wav, load_csv, save_processed_wav
 
 
 # Configure the browser title and page width.
@@ -81,8 +83,11 @@ def store_input(samples, fs_hz, source_name, is_demo):
 def style_plot(axis, x_label, y_label):
     """Apply consistent labels and styling."""
 
+    # Label both axes, including their units.
     axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
+
+    # Add a faint grid and remove unnecessary plot borders.
     axis.grid(alpha=0.15)
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
@@ -134,7 +139,7 @@ with st.sidebar:
     st.caption("Processed WAV playback and download available.")
 
 
-# Retrieve the selected stage.
+# Retrieve the selected stage and its position in the workflow.
 stage = st.session_state["current_stage"]
 stage_index = stages.index(stage)
 
@@ -204,8 +209,8 @@ if stage == "Upload":
                             uploaded_file.getvalue()
                         )
 
-                        # Read the channel and sampling rate from the WAV.
-                        # The loader also validates the signal.
+                        # Read and validate the selected channel.
+                        # The sampling rate comes from the WAV file.
                         samples, fs_hz = load_wav(
                             input_path,
                             channel=int(channel),
