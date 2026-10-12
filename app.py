@@ -290,6 +290,45 @@ elif stage == "Inspect":
             # Release the figure's memory after displaying it.
             plt.close(figure)
 
+        # Keep learning guidance available in a collapsible section.
+        with st.expander("How do I read this signal?"):
+            # Explain the horizontal axis and displayed interval.
+            st.markdown(
+                "**Time (ms):** shows when each sample was recorded. "
+                "This preview displays the first 50 milliseconds."
+            )
+
+            # Explain the vertical axis and the example's units.
+            st.markdown(
+                "**Amplitude:** shows the sample value at each instant. "
+                "Our generated example uses dimensionless values."
+            )
+
+            # Explain how the known tones contribute to the waveform.
+            st.markdown(
+                "**The shape:** the 100 Hz tone produces five main cycles "
+                "in 50 milliseconds. The added 400 Hz tone creates "
+                "smaller, faster changes within those cycles."
+            )
+
+            # Define the sampling rate in plain language.
+            st.markdown(
+                "**Sampling rate:** 2,000 Hz means 2,000 samples per second."
+            )
+
+            # Explain the Nyquist limit and the sampling assumption.
+            st.markdown(
+                "**Nyquist frequency:** half the sampling rate is 1,000 Hz. "
+                "To avoid aliasing, the input must be limited to frequencies "
+                "below this value before sampling."
+            )
+
+            # Distinguish known example information from automatic detection.
+            st.caption(
+                "The tone labels come from how we generated this example. "
+                "Automatic frequency analysis will be connected later."
+            )
+
 # Display placeholders for the remaining stages.
 else:
     # Display the selected stage's name.
