@@ -256,17 +256,33 @@ elif stage == "Inspect":
             # Adjust spacing to fit the labels.
             figure.tight_layout()
 
-            # Display the plot.
-            st.pyplot(figure)
+            # Give the waveform more width than the tone details.
+            plot_column, details_column = st.columns([3, 1])
 
-            # Release the figure's memory.
+            # Display the waveform in the wider column.
+            with plot_column:
+                # Render the actual signal plot.
+                st.pyplot(figure)
+
+            # Display known example information beside the waveform.
+            with details_column:
+                # Clearly identify these as known demo components.
+                st.markdown("**Known demo tones**")
+
+                # Display the useful component's frequency in hertz.
+                st.metric("Useful tone", "100 Hz")
+
+                # Explain its role in the example.
+                st.caption("The component we want to preserve.")
+
+                # Display the unwanted component's frequency in hertz.
+                st.metric("Unwanted tone", "400 Hz")
+
+                # Explain its role in the example.
+                st.caption("The interference we will aim to reduce.")
+
+            # Release the figure's memory after displaying it.
             plt.close(figure)
-
-            # Identify the known components of this example.
-            st.caption(
-                "Known demo tones: 100 Hz useful signal · "
-                "400 Hz unwanted signal."
-            )
 
 # Display placeholders for the remaining stages.
 else:
